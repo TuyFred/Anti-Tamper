@@ -1,5 +1,59 @@
 # Deployment Guide — Vercel (client) + Render (server)
 
+## Your live URLs
+
+| Service | URL |
+|---------|-----|
+| **Client (Vercel)** | https://anti-tamper.vercel.app |
+| **API (Render)** | `https://YOUR-SERVICE-NAME.onrender.com` (see Render dashboard → your service → top URL bar) |
+
+`dep-d9ggb6cvikkc73d7uqv0` is Render’s **internal service ID**, not the public API URL.  
+Open [Render Dashboard](https://dashboard.render.com) → your web service → copy the URL shown at the top (e.g. `https://anti-tamper-xxxx.onrender.com`).
+
+---
+
+## Fix: Vercel white screen — `supabaseUrl is required`
+
+Vercel does **not** upload your local `.env` file. You must add variables in the dashboard:
+
+1. [Vercel](https://vercel.com) → project **Anti-Tamper** → **Settings** → **Environment Variables**
+2. Add these for **Production**, **Preview**, and **Development**:
+
+| Name | Value |
+|------|--------|
+| `VITE_SUPABASE_URL` | `https://bhyncpphxbpdqzluwoqa.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | *(your Supabase anon key — same as local `client/.env`)* |
+| `VITE_API_URL` | `https://YOUR-RENDER-URL.onrender.com` |
+| `VITE_SOCKET_URL` | `https://YOUR-RENDER-URL.onrender.com` |
+
+3. **Deployments** → ⋮ on latest → **Redeploy** (required after adding env vars)
+
+---
+
+## Fix: Render build failed — `Missing script: "build"`
+
+Either use **Build command:** `npm install` only, or keep `npm install && npm run build` — the repo now includes a `build` script on the server.
+
+In Render → your service → **Settings** → **Build & Deploy**:
+
+- **Root Directory:** `server`
+- **Build Command:** `npm install && npm run build` *(or just `npm install`)*
+- **Start Command:** `npm start`
+
+### Required Render environment variables
+
+| Variable | Example |
+|----------|---------|
+| `SUPABASE_URL` | `https://bhyncpphxbpdqzluwoqa.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | *(service role key — never put in Vercel)* |
+| `CLIENT_URL` | `https://anti-tamper.vercel.app` |
+| `PUBLIC_BASE_URL` | `https://YOUR-SERVICE-NAME.onrender.com` |
+| `MQTT_BROKER_URL` | `mqtt://test.mosquitto.org:1883` |
+
+After Render deploys, test: `https://YOUR-SERVICE-NAME.onrender.com/health`
+
+---
+
 ## Architecture
 
 | Service | Platform | Folder |

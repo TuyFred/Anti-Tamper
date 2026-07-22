@@ -7,10 +7,11 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon",
+    "build": "node -e \"console.log('API server — no compile step')\"",
     "postinstall": "node -e \"const fs=require('fs');const p='uploads/promo-videos';fs.mkdirSync(p,{recursive:true});\""
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
