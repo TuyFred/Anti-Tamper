@@ -11,7 +11,7 @@
     "postinstall": "node -e \"const fs=require('fs');const p='uploads/promo-videos';fs.mkdirSync(p,{recursive:true});\""
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
@@ -21,7 +21,8 @@
     "mqtt": "^5.10.4",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
