@@ -1,0 +1,47 @@
+# Render Blueprint — Smart Box Delivery API
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: smart-box-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: MQTT_BROKER_URL
+        sync: false
+      - key: MQTT_USERNAME
+        sync: false
+      - key: MQTT_PASSWORD
+        sync: false
+      - key: EMAIL_ENABLED
+        value: "false"
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: MOMO_PAY_NUMBER
+        sync: false
+      - key: WHATSAPP_SUPPORT
+        sync: false

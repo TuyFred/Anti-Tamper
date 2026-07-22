@@ -1,0 +1,28 @@
+{
+  "name": "anti-tamper-server",
+  "version": "1.0.0",
+  "description": "MQTT + WebSocket backend for Anti-Tamper Smart Delivery Box",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon",
+    "postinstall": "node -e \"const fs=require('fs');const p='uploads/promo-videos';fs.mkdirSync(p,{recursive:true});\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mqtt": "^5.10.4",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.3",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
