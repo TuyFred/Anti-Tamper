@@ -14,6 +14,7 @@ const Operations = lazy(() => import('./pages/Operations'));
 const RiderRoute = lazy(() => import('./pages/RiderRoute'));
 const BoxTracking = lazy(() => import('./pages/BoxTracking'));
 const PromoVideosPage = lazy(() => import('./pages/PromoVideosPage'));
+const Reports = lazy(() => import('./pages/Reports'));
 
 function PageLoader() {
   return (
@@ -116,6 +117,16 @@ export default function App() {
             <ProtectedRoute>
               <Layout>
                 <BoxTracking />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute requireManager>
+              <Layout>
+                <Reports />
               </Layout>
             </ProtectedRoute>
           }

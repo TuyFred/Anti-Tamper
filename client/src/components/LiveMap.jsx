@@ -1,38 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { Maximize2, Minimize2, MapPin, Navigation, Satellite, Loader2 } from 'lucide-react';
+import { MapContainer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import {
+  Maximize2, Minimize2, Navigation, Satellite, Truck, Package,
+} from 'lucide-react';
 import { mergeDevicesWithGps, mergeDeviceWithGps } from '../lib/geocode';
-import { useReverseGeocode } from '../hooks/useReverseGeocode';
-
-const boxIcon = new L.DivIcon({
-  className: 'custom-marker',
-  html: `<div style="
-    width: 36px; height: 36px;
-    background: #0ea5e9;
-    border: 3px solid white;
-    border-radius: 50%;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
-    display: flex; align-items: center; justify-content: center;
-  "><svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M20 8h-3V4H7v4H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM7 6h10v2H7V6zm13 14H4V10h16v10z"/></svg></div>`,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
-});
-
-const alertIcon = new L.DivIcon({
-  className: 'custom-marker',
-  html: `<div style="
-    width: 36px; height: 36px;
-    background: #ef4444;
-    border: 3px solid white;
-    border-radius: 50%;
-    box-shadow: 0 0 16px rgba(239,68,68,0.8);
-    animation: pulse 1s infinite;
-  "></div>`,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
-});
+import { MAP_LABELS } from '../lib/mapConfig';
+import { createSmartBoxIcon } from '../lib/mapMarkers';
+import MapLocationCard from './MapLocationCard';
+import AppMapTileLayer from './AppMapTileLayer';
 
 function LiveTracker({ position, zoom, follow }) {
   const map = useMap();
@@ -53,37 +30,57 @@ function MapResize({ trigger }) {
   return null;
 }
 
-function DevicePopup({ device }) {
-  const { placeName, loading } = useReverseGeocode(device.latitude, device.longitude);
+function FitDevicesBounds({ devices, enabled }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!enabled || !devices?.length) return;
+    const points = devices
+      .filter((d) => d.latitude != null && d.longitude != null)
+      .map((d) => [d.latitude, d.longitude]);
+    if (points.length === 0) return;
+    if (points.length === 1) {
+      map.setView(points[0], 15);
+      return;
+    }
+    map.fitBounds(L.latLngBounds(points), { padding: [48, 48], maxZoom: 15 });
+  }, [devices, enabled, map]);
+  return null;
+}
 
+function DevicePopup({ device }) {
   return (
-    <div className="text-sm min-w-[180px]">
-      <strong>{device.name}</strong>
-      <br />
-      ID: {device.device_id}
-      <br />
-      {device.is_online ? '🟢 Online' : '🔴 Offline'}
-      <br />
-      {loading && !placeName && (
-        <span className="text-xs text-slate-500">Loading location…</span>
-      )}
-      {placeName && (
-        <>
-          <span className="text-xs">{placeName}</span>
-          <br />
-        </>
-      )}
-      <span className="font-mono text-xs text-slate-500">
-        {device.latitude?.toFixed(6)}, {device.longitude?.toFixed(6)}
-      </span>
-      {device.tamper_status && <><br />⚠️ Tamper active</>}
-      {device.shock_detected && <><br />💥 Shock / fall detected</>}
+    <MapLocationCard
+      lat={device.latitude}
+      lng={device.longitude}
+      title={device.name}
+      subtitle={`ID ${device.device_id}${device.lock_status ? ` · ${device.lock_status}` : ''}`}
+      lastUpdated={device.last_seen}
+      online={device.is_online}
+      theme="light"
+      showMapsLink
+    />
+  );
+}
+
+function NoGpsOverlay() {
+  return (
+    <div className="absolute inset-0 z-[500] flex items-center justify-center bg-surface/75 backdrop-blur-sm pointer-events-none">
+      <div className="text-center px-6 py-5 max-w-sm rounded-2xl border border-border bg-surface/95 shadow-xl">
+        <div className="w-12 h-12 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center mx-auto mb-3">
+          <Satellite className="w-6 h-6 text-primary-light" />
+        </div>
+        <p className="text-sm font-semibold text-white">{MAP_LABELS.noGpsSignal}</p>
+        <p className="text-xs text-slate-400 mt-2 leading-relaxed">{MAP_LABELS.noGpsHint}</p>
+      </div>
     </div>
   );
 }
 
-function MapContent({ devices, selectedDevice, followLive, zoom, height }) {
+function MapContent({
+  devices, selectedDevice, followLive, zoom, height, showNoGps,
+}) {
   const validDevices = devices.filter((d) => d.latitude != null && d.longitude != null);
+  const selectedId = selectedDevice?.id;
 
   const defaultCenter = validDevices.length
     ? [validDevices[0].latitude, validDevices[0].longitude]
@@ -94,64 +91,42 @@ function MapContent({ devices, selectedDevice, followLive, zoom, height }) {
     : null;
 
   return (
-    <MapContainer
-      center={selectedPosition || defaultCenter}
-      zoom={zoom}
-      scrollWheelZoom
-      style={{ height, width: '100%' }}
-      className="z-0"
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      <MapResize trigger={`${height}-${followLive}-${validDevices.length}`} />
-      {selectedPosition && (
-        <LiveTracker position={selectedPosition} zoom={zoom} follow={followLive} />
-      )}
-      {validDevices.map((device) => {
-        const hasAlert = device.tamper_status || device.shock_detected;
-        return (
-          <Marker
-            key={device.id}
-            position={[device.latitude, device.longitude]}
-            icon={hasAlert ? alertIcon : boxIcon}
-          >
-            <Popup>
-              <DevicePopup device={device} />
-            </Popup>
-          </Marker>
-        );
-      })}
-    </MapContainer>
-  );
-}
-
-function LocationReadout({ lat, lng, time }) {
-  const { placeName, loading } = useReverseGeocode(lat, lng);
-
-  if (lat == null || lng == null) return null;
-
-  return (
-    <div className="min-w-0">
-      {loading && !placeName ? (
-        <p className="text-[11px] text-slate-500 flex items-center gap-1">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Resolving location…
-        </p>
-      ) : (
-        placeName && (
-          <p className="text-xs text-white truncate">{placeName}</p>
-        )
-      )}
-      <p className="text-[11px] text-slate-500 font-mono truncate">
-        {lat.toFixed(6)}, {lng.toFixed(6)}
-        {time && (
-          <span className="text-slate-600 ml-2">
-            · {new Date(time).toLocaleTimeString()}
-          </span>
+    <div className="relative h-full w-full">
+      <MapContainer
+        center={selectedPosition || defaultCenter}
+        zoom={zoom}
+        scrollWheelZoom
+        style={{ height, width: '100%' }}
+        className="z-0"
+      >
+        <AppMapTileLayer />
+        <MapResize trigger={`${height}-${followLive}-${validDevices.length}-${selectedId}`} />
+        <FitDevicesBounds devices={validDevices} enabled={!followLive || validDevices.length > 1} />
+        {selectedPosition && (
+          <LiveTracker position={selectedPosition} zoom={zoom} follow={followLive} />
         )}
-      </p>
+        {validDevices.map((device) => {
+          const isSelected = device.id === selectedId;
+          const hasAlert = device.tamper_status || device.shock_detected;
+          return (
+            <Marker
+              key={device.id}
+              position={[device.latitude, device.longitude]}
+              icon={createSmartBoxIcon({
+                selected: isSelected,
+                online: device.is_online,
+                alert: hasAlert,
+              })}
+              zIndexOffset={isSelected ? 1000 : 0}
+            >
+              <Popup>
+                <DevicePopup device={device} />
+              </Popup>
+            </Marker>
+          );
+        })}
+      </MapContainer>
+      {showNoGps && <NoGpsOverlay />}
     </div>
   );
 }
@@ -181,6 +156,8 @@ export default function LiveMap({ devices, selectedDevice, gpsUpdates = {} }) {
     };
   }, [liveSelected]);
 
+  const hasGps = liveDevices.some((d) => d.latitude != null && d.longitude != null);
+
   useEffect(() => {
     if (!fullscreen) return undefined;
     const onKey = (e) => e.key === 'Escape' && setFullscreen(false);
@@ -192,16 +169,46 @@ export default function LiveMap({ devices, selectedDevice, gpsUpdates = {} }) {
     };
   }, [fullscreen]);
 
+  const statusBadge = liveSelected && (
+    <span className={`hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+      liveSelected.is_online
+        ? 'bg-success/10 text-success border-success/25'
+        : 'bg-surface-lighter text-slate-500 border-border'
+    }`}>
+      <Package className="w-3 h-3" />
+      {liveSelected.is_online ? MAP_LABELS.online : MAP_LABELS.offline}
+    </span>
+  );
+
   const mapToolbar = (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-surface/80 shrink-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <MapPin className="w-4 h-4 text-primary-light shrink-0" />
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-white truncate">
-            {liveSelected?.name || 'Live map'}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-border bg-surface/90 shrink-0">
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        <div className="shrink-0 w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+          <Truck className="w-5 h-5 text-primary-light" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-white truncate">
+              {liveSelected?.name || MAP_LABELS.liveMap}
+            </p>
+            {statusBadge}
+          </div>
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mt-0.5">
+            {MAP_LABELS.liveLocation}
           </p>
-          {liveCoords && (
-            <LocationReadout lat={liveCoords.lat} lng={liveCoords.lng} time={liveCoords.time} />
+          {liveCoords ? (
+            <div className="mt-2">
+              <MapLocationCard
+                lat={liveCoords.lat}
+                lng={liveCoords.lng}
+                lastUpdated={liveCoords.time}
+                online={liveSelected?.is_online}
+                compact
+                showMapsLink={false}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 mt-1">{MAP_LABELS.noGpsSignal}</p>
           )}
         </div>
       </div>
@@ -209,7 +216,7 @@ export default function LiveMap({ devices, selectedDevice, gpsUpdates = {} }) {
         <button
           type="button"
           onClick={() => setFollowLive((f) => !f)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition touch-manipulation ${
             followLive
               ? 'bg-primary/15 text-primary-light border-primary/30'
               : 'bg-surface text-slate-400 border-border hover:text-white'
@@ -217,22 +224,22 @@ export default function LiveMap({ devices, selectedDevice, gpsUpdates = {} }) {
           title="Follow live GPS position"
         >
           <Navigation className="w-3.5 h-3.5" />
-          {followLive ? 'Following' : 'Follow'}
+          {followLive ? MAP_LABELS.followingGps : MAP_LABELS.followGps}
         </button>
         <button
           type="button"
           onClick={() => setFullscreen((f) => !f)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-lighter text-white border border-border hover:border-primary/40 transition"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-surface-lighter text-white border border-border hover:border-primary/40 transition touch-manipulation"
         >
           {fullscreen ? (
             <>
               <Minimize2 className="w-3.5 h-3.5" />
-              Exit
+              {MAP_LABELS.exitFullscreen}
             </>
           ) : (
             <>
               <Maximize2 className="w-3.5 h-3.5" />
-              Fullscreen
+              {MAP_LABELS.fullscreen}
             </>
           )}
         </button>
@@ -240,40 +247,68 @@ export default function LiveMap({ devices, selectedDevice, gpsUpdates = {} }) {
     </div>
   );
 
-  const embeddedMap = (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden border border-slate-700/50">
-      {mapToolbar}
-      <div className="flex-1 min-h-[480px] relative">
-        <MapContent
-          devices={liveDevices}
-          selectedDevice={liveSelected}
-          followLive={followLive}
-          zoom={15}
-          height="100%"
-        />
+  const mapBody = (mapZoom) => (
+    <div className="flex-1 min-h-[480px] relative">
+      <MapContent
+        devices={liveDevices}
+        selectedDevice={liveSelected}
+        followLive={followLive}
+        zoom={mapZoom}
+        height="100%"
+        showNoGps={!hasGps}
+      />
+    </div>
+  );
+
+  const mapFooter = liveCoords && (
+    <div className="px-4 py-3 border-t border-border bg-surface/60 space-y-2">
+      <div className="flex items-center gap-2 text-xs text-success">
+        <Satellite className="w-3.5 h-3.5 animate-pulse shrink-0" />
+        <span>{MAP_LABELS.liveGpsFooter}</span>
       </div>
-      {liveCoords && (
-        <div className="px-4 py-2 border-t border-border bg-surface/50 flex items-center gap-2 text-xs text-slate-400">
-          <Satellite className="w-3.5 h-3.5 text-success animate-pulse" />
-          Live GPS — marker updates automatically when the box moves
-        </div>
-      )}
+      <MapLocationCard
+        lat={liveCoords.lat}
+        lng={liveCoords.lng}
+        title={MAP_LABELS.smartBox}
+        subtitle={liveSelected?.device_id}
+        lastUpdated={liveCoords.time}
+        online={liveSelected?.is_online}
+        showMapsLink
+      />
+    </div>
+  );
+
+  const embeddedMap = (
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border border-slate-700/50 shadow-lg shadow-black/20">
+      {mapToolbar}
+      {mapBody(15)}
+      {mapFooter}
     </div>
   );
 
   const fullscreenMap = fullscreen && createPortal(
     <div className="fixed inset-0 z-[9998] flex flex-col bg-[#0b1120]">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-surface shrink-0">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-primary-light" />
-            Live map — {liveSelected?.name || 'All devices'}
-          </h2>
-          {liveCoords && (
-            <div className="mt-1">
-              <LocationReadout lat={liveCoords.lat} lng={liveCoords.lng} time={liveCoords.time} />
-            </div>
-          )}
+      <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-border bg-surface shrink-0">
+        <div className="min-w-0 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+            <Truck className="w-5 h-5 text-primary-light" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-white truncate">
+              {MAP_LABELS.liveMap} — {liveSelected?.name || 'All devices'}
+            </h2>
+            {liveCoords && (
+              <div className="mt-2 max-w-xl">
+                <MapLocationCard
+                  lat={liveCoords.lat}
+                  lng={liveCoords.lng}
+                  lastUpdated={liveCoords.time}
+                  online={liveSelected?.is_online}
+                  compact
+                />
+              </div>
+            )}
+          </div>
         </div>
         <button
           type="button"
@@ -281,24 +316,16 @@ export default function LiveMap({ devices, selectedDevice, gpsUpdates = {} }) {
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-lighter border border-border text-white hover:border-primary/40 text-sm font-medium shrink-0"
         >
           <Minimize2 className="w-4 h-4" />
-          Close fullscreen
+          {MAP_LABELS.closeFullscreen}
         </button>
       </div>
-      <div className="flex-1 relative">
-        <MapContent
-          devices={liveDevices}
-          selectedDevice={liveSelected}
-          followLive={followLive}
-          zoom={17}
-          height="100%"
-        />
-      </div>
-      <div className="px-5 py-2 border-t border-border bg-surface/80 text-xs text-slate-500 flex items-center justify-between">
+      {mapBody(17)}
+      <div className="px-5 py-3 border-t border-border bg-surface/80 text-xs text-slate-500 flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
           <Satellite className="w-3.5 h-3.5 text-success" />
-          Real-time location from ESP32 GPS module
+          {MAP_LABELS.realTimeGps}
         </span>
-        <span>Press Esc to exit</span>
+        <span>{MAP_LABELS.pressEsc}</span>
       </div>
     </div>,
     document.body

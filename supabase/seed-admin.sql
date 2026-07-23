@@ -99,7 +99,7 @@ BEGIN
     NOW()
   WHERE NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = existing_user_id);
 
-  -- Grant full access to all devices
+  -- Grant full access to all devices (none until you register boxes in Admin)
   INSERT INTO public.device_access (user_id, device_id, can_view, can_control, granted_by)
   SELECT
     existing_user_id,

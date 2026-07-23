@@ -20,7 +20,7 @@ export function deliveryStatusMeta(status) {
 }
 
 export function formatPrice(amount, currency = 'RWF') {
-  return `${Number(amount).toLocaleString()} ${currency}`;
+  return `${Number(amount).toLocaleString('en-US')} ${currency}`;
 }
 
 export function formatDeliveryRef(id) {
@@ -30,17 +30,35 @@ export function formatDeliveryRef(id) {
 
 export function formatDeliveryDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
+  return new Date(iso).toLocaleDateString('en-US', {
+    day: 'numeric', month: 'long', year: 'numeric',
   });
 }
 
 export function formatDeliveryDateTime(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+  return new Date(iso).toLocaleString('en-US', {
+    weekday: 'short',
+    day: 'numeric', month: 'long', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+    hour12: true,
   });
+}
+
+/** English label for report date range picker values (YYYY-MM-DD) */
+export function formatReportDateRange({ from, to } = {}) {
+  const fmt = (d) => {
+    if (!d) return null;
+    return new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+  };
+  const a = fmt(from);
+  const b = fmt(to);
+  if (a && b) return `${a} to ${b}`;
+  if (a) return `From ${a}`;
+  if (b) return `Until ${b}`;
+  return 'All time';
 }
 
 export function isActiveDelivery(status) {

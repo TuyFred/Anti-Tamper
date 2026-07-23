@@ -127,4 +127,43 @@ export const api = {
     if (!res.ok) throw new Error(data.error || 'Upload failed');
     return data;
   },
+
+  getReportSummary: (token, { from, to } = {}) => {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    return apiFetch(`/api/reports/summary?${q}`, {}, token);
+  },
+  getActivityHistory: (token, { from, to, limit } = {}) => {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    if (limit) q.set('limit', String(limit));
+    return apiFetch(`/api/reports/history?${q}`, {}, token);
+  },
+  getGeneratedReports: (token) => apiFetch('/api/reports/generated', {}, token),
+  getDeliveryHistory: (token, id) => apiFetch(`/api/reports/delivery/${id}`, {}, token),
 };
+
+export async function downloadReportPdf(token, path, { from, to } = {}) {
+  const q = new URLSearchParams();
+  if (from) q.set('from', from);
+  if (to) q.set('to', to);
+  const qs = q.toString();
+  const url = `${API_URL}/api/reports/pdf/${path}${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'PDF download failed');
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const fileName = match?.[1] || `report-${Date.now()}.pdf`;
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}

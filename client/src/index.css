@@ -100,6 +100,57 @@ body {
   animation: slide-in-left 0.28s ease-out forwards;
 }
 
+/* Live map marker pulse */
+@keyframes map-marker-pulse {
+  0% { transform: scale(0.85); opacity: 0.75; }
+  70% { transform: scale(1.45); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+.custom-map-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.map-marker-wrap {
+  pointer-events: none;
+}
+
+.map-marker-pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  opacity: 0.35;
+  animation: map-marker-pulse 2s ease-out infinite;
+}
+
+.map-marker-label {
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.leaflet-popup-content {
+  margin: 10px 12px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 @media (max-width: 640px) {
   .mobile-touch-target {
     min-height: 44px;

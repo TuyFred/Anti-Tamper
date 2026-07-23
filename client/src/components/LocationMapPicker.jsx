@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import { MapPin, Loader2 } from 'lucide-react';
 import L from 'leaflet';
 import { KIGALI_CENTER } from '../lib/rwandaAddress';
+import { MAP_LABELS } from '../lib/mapConfig';
 import { useReverseGeocode } from '../hooks/useReverseGeocode';
+import AppMapTileLayer from './AppMapTileLayer';
 
 const pinIcon = (color) => new L.DivIcon({
   className: 'custom-marker',
@@ -41,11 +43,11 @@ function LocationInfo({ lat, lng }) {
         {loading && !placeName ? (
           <p className="text-xs text-slate-500 flex items-center gap-1">
             <Loader2 className="w-3 h-3 animate-spin" />
-            Finding location name…
+            {MAP_LABELS.resolvingLocation}
           </p>
         ) : (
           <p className="text-xs text-white font-medium leading-snug">
-            {placeName || 'Selected map location'}
+            {placeName || MAP_LABELS.selectedLocation}
           </p>
         )}
         <p className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -67,7 +69,7 @@ export default function LocationMapPicker({
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-slate-500">{label || 'Click map to pin location'}</p>
+      <p className="text-[11px] text-slate-500">{label || MAP_LABELS.clickToPin}</p>
       <div className="rounded-xl overflow-hidden border border-border" style={{ height }}>
         <MapContainer
           center={center}
@@ -75,10 +77,7 @@ export default function LocationMapPicker({
           style={{ height: '100%', width: '100%' }}
           scrollWheelZoom
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <AppMapTileLayer />
           <ClickHandler onPick={(lat, lng) => onChange({ lat, lng })} />
           {position && (
             <>

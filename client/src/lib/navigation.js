@@ -26,6 +26,7 @@ export function getAppNavItems({ isManager, isCustomer, isRider }) {
     return [
       { to: '/dashboard', label: 'Overview', icon: 'LayoutDashboard', section: 'main' },
       { to: '/operations', label: 'Operations', icon: 'ClipboardList', section: 'control' },
+      { to: '/reports', label: 'Reports', icon: 'FileText', section: 'control' },
       { to: '/tracking', label: 'Fleet', icon: 'Radio', section: 'control' },
       { to: '/alerts', label: 'Alerts', icon: 'Bell', section: 'control', badgeKey: 'alerts' },
       { to: '/admin', label: 'Users', icon: 'Users', section: 'control' },

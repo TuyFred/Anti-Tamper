@@ -11,19 +11,37 @@ function pickAddressPart(address, keys) {
   return null;
 }
 
+function preferEnglishName(data) {
+  const namedetails = data?.namedetails || {};
+  if (namedetails['name:en']) return namedetails['name:en'];
+  if (data?.address?.['name:en']) return data.address['name:en'];
+  if (data?.name && /^[\x00-\x7F\s,.-]+$/.test(data.name)) return data.name;
+  return null;
+}
+
 export function formatGeocodeResult(data) {
   if (!data) return null;
 
   const address = data.address || {};
+  const englishName = preferEnglishName(data);
+
+  const road = pickAddressPart(address, ['road', 'pedestrian', 'footway', 'residential', 'street']);
   const locality =
-    pickAddressPart(address, ['suburb', 'neighbourhood', 'quarter', 'village', 'hamlet'])
+    pickAddressPart(address, ['suburb', 'neighbourhood', 'quarter', 'village', 'hamlet', 'city_block'])
     || pickAddressPart(address, ['city_district', 'district', 'county']);
   const city = pickAddressPart(address, ['city', 'town', 'municipality']);
   const region = pickAddressPart(address, ['state', 'region']);
-  const road = pickAddressPart(address, ['road', 'pedestrian', 'footway']);
 
   const parts = [road, locality, city, region].filter(Boolean);
-  if (parts.length > 0) return parts.join(', ');
+  if (parts.length > 0) {
+    const line = parts.join(', ');
+    if (englishName && !line.toLowerCase().includes(englishName.toLowerCase())) {
+      return `${englishName}, ${line}`;
+    }
+    return line;
+  }
+
+  if (englishName) return englishName;
 
   if (data.display_name) {
     return data.display_name.split(',').slice(0, 3).join(', ').trim();
@@ -48,11 +66,14 @@ export async function reverseGeocode(lat, lng) {
     url.searchParams.set('lon', String(lng));
     url.searchParams.set('zoom', '18');
     url.searchParams.set('addressdetails', '1');
+    url.searchParams.set('namedetails', '1');
+    url.searchParams.set('accept-language', 'en');
 
     const res = await fetch(url.toString(), {
       headers: {
         Accept: 'application/json',
-        'Accept-Language': 'en',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'AntiTamperSmartDelivery/1.0',
       },
     });
 

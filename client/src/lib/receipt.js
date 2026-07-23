@@ -91,14 +91,14 @@ function receiptHtml(delivery, config, customerName) {
     <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
     <tbody>
       <tr><td>Smart Box transport (${delivery.distance_km} km)</td><td style="text-align:right">${formatPrice(b.transport_ht, b.currency)}</td></tr>
-      <tr><td>TVA / VAT (${b.vat_percent}%)</td><td style="text-align:right">${formatPrice(b.vat_amount, b.currency)}</td></tr>
+      <tr><td>VAT (${b.vat_percent}%)</td><td style="text-align:right">${formatPrice(b.vat_amount, b.currency)}</td></tr>
     </tbody>
   </table>
 
   <div class="totals">
-    <div class="row"><span>Transport (HT)</span><span>${formatPrice(b.transport_ht, b.currency)}</span></div>
-    <div class="row"><span>TVA ${b.vat_percent}%</span><span>${formatPrice(b.vat_amount, b.currency)}</span></div>
-    <div class="grand"><span>Total (TTC)</span><span>${formatPrice(b.total_ttc, b.currency)}</span></div>
+    <div class="row"><span>Subtotal (excl. VAT)</span><span>${formatPrice(b.transport_ht, b.currency)}</span></div>
+    <div class="row"><span>VAT ${b.vat_percent}%</span><span>${formatPrice(b.vat_amount, b.currency)}</span></div>
+    <div class="grand"><span>Total (incl. VAT)</span><span>${formatPrice(b.total_ttc, b.currency)}</span></div>
   </div>
 
   <div class="footer">

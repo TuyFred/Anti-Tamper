@@ -2,6 +2,7 @@ import mqtt from 'mqtt';
 import { supabase } from '../config/supabase.js';
 import { config } from '../config/supabase.js';
 import { notifyAlertByEmail } from '../services/alertNotify.js';
+import { logGpsHistory } from '../lib/activityLog.js';
 
 let mqttClient = null;
 let ioInstance = null;
@@ -99,6 +100,8 @@ async function handleGps(device, data) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', device.id);
+
+  await logGpsHistory(device.id, latitude, longitude, 'mqtt');
 
   const update = {
     deviceId: device.id,

@@ -25,34 +25,8 @@ CREATE POLICY "Anyone can read rwanda locations"
   USING (true);
 
 -- ============================================================
--- SEED — City of Kigali (sample; app also ships client/src/data/rwandaAdmin.js)
+-- SEED — optional reference rows (app uses client/src/data/rwandaAdmin.js by default)
+-- Add provinces/villages here only if you want GET /api/locations/rwanda from DB.
+-- Delivery pickup/delivery coordinates come from the map pin — not from this table.
 -- ============================================================
-INSERT INTO public.rwanda_locations (province, district, sector, cell, village, level) VALUES
-  ('City of Kigali', '', '', '', '', 'province'),
-  ('Eastern Province', '', '', '', '', 'province'),
-  ('Northern Province', '', '', '', '', 'province'),
-  ('Southern Province', '', '', '', '', 'province'),
-  ('Western Province', '', '', '', '', 'province')
-ON CONFLICT DO NOTHING;
-
--- Gasabo — Kimironko
-INSERT INTO public.rwanda_locations (province, district, sector, cell, village, level) VALUES
-  ('City of Kigali', 'Gasabo', 'Kimironko', 'Kibagabaga', 'Ubumwe', 'village'),
-  ('City of Kigali', 'Gasabo', 'Kimironko', 'Kibagabaga', 'Amahoro', 'village'),
-  ('City of Kigali', 'Gasabo', 'Kimironko', 'Kibagabaga', 'Nyagatovu', 'village'),
-  ('City of Kigali', 'Gasabo', 'Remera', 'Rukiri', 'Amahoro', 'village'),
-  ('City of Kigali', 'Gasabo', 'Remera', 'Rukiri', 'Ubumwe', 'village'),
-  ('City of Kigali', 'Gasabo', 'Kacyiru', 'Kamatamu', 'Ubumwe', 'village'),
-  ('City of Kigali', 'Kicukiro', 'Kicukiro', 'Ngoma', 'Ubumwe', 'village'),
-  ('City of Kigali', 'Kicukiro', 'Gikondo', 'Kanserege', 'Amahoro', 'village'),
-  ('City of Kigali', 'Nyarugenge', 'Nyarugenge', 'Nyamirambo', 'Ubumwe', 'village'),
-  ('City of Kigali', 'Nyarugenge', 'Muhima', 'Muhima', 'Ubumwe', 'village'),
-  ('City of Kigali', 'Nyarugenge', 'Kimisagara', 'Kimisagara', 'Amahoro', 'village')
-ON CONFLICT DO NOTHING;
-
--- Eastern Province samples
-INSERT INTO public.rwanda_locations (province, district, sector, cell, village, level) VALUES
-  ('Eastern Province', 'Bugesera', 'Nyamata', 'Nyamata', 'Nyamata I', 'village'),
-  ('Eastern Province', 'Rwamagana', 'Rwamagana', 'Rwamagana', 'Ubumwe', 'village'),
-  ('Eastern Province', 'Kayonza', 'Kayonza', 'Kayonza', 'Ubumwe', 'village')
-ON CONFLICT DO NOTHING;
+-- (no seed rows — locations are captured live on the map)

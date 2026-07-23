@@ -14,6 +14,7 @@ import deliveriesRouter from './routes/deliveries.js';
 import reviewsRouter from './routes/reviews.js';
 import promoVideosRouter from './routes/promoVideos.js';
 import locationsRouter from './routes/locations.js';
+import reportsRouter from './routes/reports.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,6 +54,7 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/promo-videos', promoVideosRouter);
 app.use('/api/alerts', alertsRouter);
 app.use('/api/locations', locationsRouter);
+app.use('/api/reports', reportsRouter);
 
 const io = initSocket(httpServer);
 initMqtt(io);

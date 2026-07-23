@@ -7,6 +7,7 @@ const pageTitles = {
   '/dashboard': { title: 'Dashboard' },
   '/deliveries': { title: 'Deliveries' },
   '/operations': { title: 'Operations' },
+  '/reports': { title: 'Reports & History' },
   '/rider': { title: 'My Route' },
   '/alerts': { title: 'Alerts' },
   '/tracking': { title: 'Tracking' },

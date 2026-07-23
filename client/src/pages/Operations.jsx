@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   ClipboardList, CheckCircle2, UserCheck, Lock, Unlock, Truck,
-  Loader2, Eye, Play, XCircle, Ban, Key, Mail,
+  Loader2, Eye, Play, XCircle, Ban, Key, Mail, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../lib/api';
+import { api, downloadReportPdf } from '../lib/api';
 import Badge from '../components/ui/Badge';
 import PaymentProofModal from '../components/PaymentProofModal';
 import {
@@ -165,7 +165,18 @@ export default function Operations() {
                     <p className="text-xs font-mono text-slate-500">{formatDeliveryRef(d.id)} · {formatDeliveryDate(d.created_at)}</p>
                     <p className="text-sm font-medium text-white mt-0.5">{d.customer?.full_name || d.customer?.email}</p>
                   </div>
-                  <Badge variant={meta.variant}>{meta.label}</Badge>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="Download delivery PDF report"
+                      onClick={() => runAction(() => downloadReportPdf(token, `delivery/${d.id}`, {}), `${d.id}-pdf`)}
+                      disabled={!!actionId}
+                      className="p-2 rounded-lg border border-border text-slate-400 hover:text-primary-light hover:border-primary/30 disabled:opacity-50"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </button>
+                    <Badge variant={meta.variant}>{meta.label}</Badge>
+                  </div>
                 </div>
 
                 <div className="space-y-2 p-3 rounded-xl bg-surface/60 border border-border">

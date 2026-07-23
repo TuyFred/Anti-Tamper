@@ -7,6 +7,9 @@ import {
 import { isCustomer, isManager, isRider } from '../middleware/permissions.js';
 import { calculateDeliveryPrice, generateUnlockToken } from '../services/pricing.js';
 import { sendDeviceCommand } from '../mqtt/handler.js';
+import {
+  logDeliveryStatus, logPaymentEvent, logActivity,
+} from '../lib/activityLog.js';
 
 const router = Router();
 
@@ -178,6 +181,22 @@ router.post('/', authenticate, requireApproved, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logDeliveryStatus(data.id, null, 'awaiting_payment', req.user.id, 'Delivery requested');
+  await logActivity({
+    entityType: 'delivery',
+    entityId: data.id,
+    action: 'created',
+    actorId: req.user.id,
+    summary: 'New delivery request',
+    newValue: {
+      pickup_address: data.pickup_address,
+      delivery_address: data.delivery_address,
+      pickup_latitude: data.pickup_latitude,
+      pickup_longitude: data.pickup_longitude,
+      delivery_latitude: data.delivery_latitude,
+      delivery_longitude: data.delivery_longitude,
+    },
+  });
   res.status(201).json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
@@ -210,6 +229,16 @@ router.post('/:id/payment-proof', authenticate, requireApproved, async (req, res
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logDeliveryStatus(data.id, delivery.status, 'payment_submitted', req.user.id);
+  await logPaymentEvent({
+    deliveryId: data.id,
+    eventType: 'submitted',
+    amount: data.calculated_price,
+    currency: data.currency,
+    paymentMethod: data.payment_method,
+    proofUrl: data.payment_proof_url,
+    actorId: req.user.id,
+  });
   res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
@@ -233,6 +262,15 @@ router.post('/:id/verify-payment', authenticate, requireApproved, requireManager
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logDeliveryStatus(data.id, delivery.status, 'payment_verified', req.user.id);
+  await logPaymentEvent({
+    deliveryId: data.id,
+    eventType: 'verified',
+    amount: data.calculated_price,
+    currency: data.currency,
+    paymentMethod: data.payment_method,
+    actorId: req.user.id,
+  });
   res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
@@ -257,6 +295,17 @@ router.post('/:id/reject-payment', authenticate, requireApproved, requireManager
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  const reason = req.body?.reason?.trim() || delivery.manager_notes;
+  await logDeliveryStatus(data.id, delivery.status, 'awaiting_payment', req.user.id, reason);
+  await logPaymentEvent({
+    deliveryId: data.id,
+    eventType: 'rejected',
+    amount: delivery.calculated_price,
+    currency: delivery.currency,
+    paymentMethod: delivery.payment_method,
+    actorId: req.user.id,
+    notes: reason,
+  });
   res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
@@ -283,6 +332,16 @@ router.post('/:id/cancel', authenticate, requireApproved, requireManager, async 
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  const cancelReason = req.body?.reason?.trim() || delivery.manager_notes;
+  await logDeliveryStatus(data.id, delivery.status, 'cancelled', req.user.id, cancelReason);
+  await logPaymentEvent({
+    deliveryId: data.id,
+    eventType: 'cancelled',
+    amount: delivery.calculated_price,
+    currency: delivery.currency,
+    actorId: req.user.id,
+    notes: cancelReason,
+  });
   res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
@@ -324,6 +383,15 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logDeliveryStatus(data.id, delivery.status, 'rider_assigned', req.user.id, 'Rider and Smart Box assigned');
+  await logActivity({
+    entityType: 'delivery',
+    entityId: data.id,
+    action: 'rider_assigned',
+    actorId: req.user.id,
+    summary: 'Rider and Smart Box assigned',
+    newValue: { rider_id, device_id, token_sent_at: data.token_sent_at },
+  });
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
     message: 'Rider assigned to route. Unlock code sent to customer inbox.',
@@ -350,6 +418,7 @@ router.post('/:id/start-transit', authenticate, requireApproved, async (req, res
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logDeliveryStatus(data.id, delivery.status, 'in_transit', req.user.id);
   res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
@@ -390,6 +459,13 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logActivity({
+    entityType: 'delivery',
+    entityId: data.id,
+    action: 'box_unlocked',
+    actorId: req.user.id,
+    summary: 'Customer unlocked Smart Box with token',
+  });
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
     message: 'Smart Box unlocked — retrieve your items within 60 seconds',
@@ -443,6 +519,7 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
       .select(DELIVERY_SELECT)
       .single();
     if (error) return res.status(500).json({ error: error.message });
+    await logDeliveryStatus(data.id, delivery.status, 'delivered', req.user.id, 'Completed by manager');
     return res.json(sanitizeDelivery(data, req.profile, req.user.id));
   }
 
@@ -470,6 +547,7 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  await logDeliveryStatus(data.id, delivery.status, 'delivered', req.user.id, 'Confirmed by customer');
   res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 

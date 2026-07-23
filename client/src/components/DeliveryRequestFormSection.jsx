@@ -60,7 +60,7 @@ export function DeliveryRequestForm({ form, setForm, onSubmit, submitting, error
       <div className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-success">Pickup</p>
         <RwandaAddressFields title="Address" icon={MapPin} value={form.pickup} onChange={(pickup) => setForm({ ...form, pickup })} />
-        <LocationMapPicker label="Map pin" position={form.pickup_coords} onChange={(pickup_coords) => setForm({ ...form, pickup_coords })} pinColor="#10b981" />
+        <LocationMapPicker label="Pin pickup location on map" position={form.pickup_coords} onChange={(pickup_coords) => setForm({ ...form, pickup_coords })} pinColor="#10b981" />
         <textarea
           value={form.pickup_instructions}
           onChange={(e) => setForm({ ...form, pickup_instructions: e.target.value })}
@@ -72,7 +72,7 @@ export function DeliveryRequestForm({ form, setForm, onSubmit, submitting, error
       <div className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-primary-light">Delivery</p>
         <RwandaAddressFields title="Address" icon={MapPin} value={form.delivery} onChange={(delivery) => setForm({ ...form, delivery })} />
-        <LocationMapPicker label="Map pin" position={form.delivery_coords} onChange={(delivery_coords) => setForm({ ...form, delivery_coords })} pinColor="#3b82f6" />
+        <LocationMapPicker label="Pin delivery location on map" position={form.delivery_coords} onChange={(delivery_coords) => setForm({ ...form, delivery_coords })} pinColor="#3b82f6" />
         <textarea
           value={form.delivery_instructions}
           onChange={(e) => setForm({ ...form, delivery_instructions: e.target.value })}

@@ -255,6 +255,5 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
--- Seed demo device
-INSERT INTO public.devices (device_id, name, description, latitude, longitude)
-VALUES ('BOX-001', 'Delivery Box Alpha', 'Primary smart delivery box', 48.8566, 2.3522);
+-- Devices are registered via Admin / API when hardware is deployed.
+-- GPS coordinates come from live ESP32 capture — no demo device seed.
