@@ -27,6 +27,7 @@ export async function apiFetch(path, options = {}, token) {
 
 export const api = {
   getMe: (token) => apiFetch('/api/users/me', {}, token),
+  register: (payload) => apiFetch('/api/users/register', { method: 'POST', body: JSON.stringify(payload) }),
   getUsers: (token) => apiFetch('/api/users', {}, token),
   getPendingUsers: (token) => apiFetch('/api/users/pending', {}, token),
   approveUser: (token, userId, roleId) =>

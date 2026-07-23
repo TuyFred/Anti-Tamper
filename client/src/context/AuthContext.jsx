@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
+import { formatAuthError } from '../lib/authErrors';
 
 const AuthContext = createContext(null);
 
@@ -41,17 +42,24 @@ export function AuthProvider({ children }) {
   }, [loadProfile]);
 
   const signIn = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) {
+      const friendly = new Error(formatAuthError(error));
+      friendly.code = error.code;
+      throw friendly;
+    }
   };
 
   const signUp = async (email, password, fullName) => {
-    const { error } = await supabase.auth.signUp({
-      email,
+    await api.register({
+      email: email.trim().toLowerCase(),
       password,
-      options: { data: { full_name: fullName } },
+      full_name: fullName?.trim(),
     });
-    if (error) throw error;
+    await signIn(email, password);
   };
 
   const signOut = async () => {

@@ -39,8 +39,6 @@ export default function Login() {
       } else {
         await signUp(email, password, fullName);
         setSuccess('Account created — awaiting manager approval.');
-        setMode('login');
-        setPassword('');
       }
     } catch (err) {
       setError(err.message);

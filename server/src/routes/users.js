@@ -9,6 +9,63 @@ import { getPermissions } from '../middleware/permissions.js';
 
 const router = Router();
 
+/** Public customer registration — email confirmed so login works immediately */
+router.post('/register', async (req, res) => {
+  const { email, password, full_name } = req.body;
+
+  if (!email?.trim() || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: normalizedEmail,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: full_name?.trim() || normalizedEmail },
+  });
+
+  if (authError) {
+    const msg = authError.message?.toLowerCase() || '';
+    if (msg.includes('already') || msg.includes('registered')) {
+      return res.status(400).json({ error: 'An account with this email already exists. Try signing in.' });
+    }
+    return res.status(400).json({ error: authError.message });
+  }
+
+  const userId = authData.user.id;
+
+  // Profile is created by DB trigger; ensure customer role + pending approval
+  const { data: customerRole } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('name', 'customer')
+    .maybeSingle();
+
+  if (customerRole?.id) {
+    await supabase
+      .from('profiles')
+      .update({
+        full_name: full_name?.trim() || normalizedEmail,
+        role_id: customerRole.id,
+        is_approved: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+  }
+
+  res.status(201).json({
+    success: true,
+    email: normalizedEmail,
+    message: 'Account created. A manager must approve your account before you can use deliveries.',
+  });
+});
+
 router.get('/me', authenticate, async (req, res) => {
   res.json({
     user: { id: req.user.id, email: req.user.email },
@@ -190,7 +247,10 @@ router.post('/:userId/reset-password', authenticate, requireApproved, requireAdm
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    password,
+    email_confirm: true,
+  });
   if (error) return res.status(400).json({ error: error.message });
 
   res.json({ success: true });
