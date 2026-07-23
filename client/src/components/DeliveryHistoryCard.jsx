@@ -16,7 +16,8 @@ import {
   getDeliveryTimeline,
   isActiveDelivery,
 } from '../lib/deliveryUtils';
-import { canDownloadReceipt, downloadDeliveryReceipt, printDeliveryReceipt, getReceiptBreakdown } from '../lib/receipt';import { DeliveryProgressBar } from './DeliveryPaymentStep';
+import { canDownloadReceipt, downloadDeliveryReceipt, printDeliveryReceipt, getReceiptBreakdown } from '../lib/receipt';
+import { DeliveryProgressBar } from './DeliveryPaymentStep';
 import DeliveryPaymentStep, { DeliveryArrivedBanner } from './DeliveryPaymentStep';
 import CustomerUnlockPanel from './CustomerUnlockPanel';
 import StarRating from './StarRating';
@@ -73,7 +74,7 @@ export default function DeliveryHistoryCard({
   onSuccess,
   defaultExpanded,
 }) {
-  const { profile } = useAuth();
+  const { profile, isCustomer } = useAuth();
   const [expanded, setExpanded] = useState(defaultExpanded ?? isActiveDelivery(delivery.status));
   const meta = deliveryStatusMeta(delivery.status);
   const timeline = getDeliveryTimeline(delivery);
@@ -84,7 +85,7 @@ export default function DeliveryHistoryCard({
   const needsPayment = delivery.status === 'awaiting_payment';
   const awaitingConfirm = delivery.status === 'payment_submitted';
   const canTrack = ['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status);
-  const canUnlock = ['rider_assigned', 'in_transit'].includes(delivery.status);
+  const canUnlock = isCustomer && ['rider_assigned', 'in_transit'].includes(delivery.status);
   const canReview = delivery.status === 'delivered';
 
   return (

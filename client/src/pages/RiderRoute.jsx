@@ -113,7 +113,12 @@ export default function RiderRoute() {
                     <span className="text-[10px] font-mono text-slate-500">{formatDeliveryRef(d.id)}</span>
                     <Badge variant={meta.variant}>{meta.label}</Badge>
                   </div>
-                  <p className="text-xs text-slate-300 truncate">{d.delivery_address}</p>
+                  <p className="text-xs text-slate-300 truncate">
+                    <span className="text-success font-medium">A</span> {d.pickup_address}
+                  </p>
+                  <p className="text-xs text-slate-400 truncate">
+                    <span className="text-primary-light font-medium">B</span> {d.delivery_address}
+                  </p>
                   <p className="text-[10px] text-slate-500 mt-1">{formatDeliveryDate(d.created_at)}</p>
                 </button>
               );
@@ -148,9 +153,13 @@ export default function RiderRoute() {
               <RiderRouteMap delivery={selected} height="260px" />
 
               <div className="grid sm:grid-cols-2 gap-3">
-                <AddressCard label="Pickup A" address={selected.pickup_address} accent="pickup" />
-                <AddressCard label="Delivery B" address={selected.delivery_address} accent="delivery" />
+                <AddressCard label="Pickup A — collect package" address={selected.pickup_address} accent="pickup" />
+                <AddressCard label="Delivery B — hand off to customer" address={selected.delivery_address} accent="delivery" />
               </div>
+
+              <p className="text-[11px] text-slate-500 p-2.5 rounded-lg bg-surface border border-border leading-relaxed">
+                Your job is transport only (A → B). The customer unlocks the Smart Box at delivery B with their personal token — you cannot open the box.
+              </p>
 
               {selected.special_instructions && (
                 <p className="text-xs text-slate-400 p-3 rounded-lg bg-surface border border-border">

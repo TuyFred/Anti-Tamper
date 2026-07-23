@@ -27,6 +27,26 @@ async function getDeliveryById(id) {
   return data;
 }
 
+/** Unlock token is visible only to the customer who owns the delivery. */
+function sanitizeDelivery(delivery, profile, userId) {
+  if (!delivery) return delivery;
+  if (isCustomer(profile) && delivery.customer_id === userId) return delivery;
+
+  const sanitized = { ...delivery };
+  delete sanitized.unlock_token;
+  delete sanitized.token_expires_at;
+
+  if (isManager(profile)) {
+    sanitized.customer_token_sent = Boolean(delivery.unlock_token);
+  }
+
+  return sanitized;
+}
+
+function sanitizeDeliveries(list, profile, userId) {
+  return (list || []).map((d) => sanitizeDelivery(d, profile, userId));
+}
+
 async function lockDevice(deviceRow) {
   if (!deviceRow?.device_id) return;
   sendDeviceCommand(deviceRow.device_id, 'lock');
@@ -100,7 +120,7 @@ router.get('/', authenticate, requireApproved, async (req, res) => {
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+  res.json(sanitizeDeliveries(data, req.profile, req.user.id));
 });
 
 router.post('/', authenticate, requireApproved, async (req, res) => {
@@ -152,7 +172,7 @@ router.post('/', authenticate, requireApproved, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
+  res.status(201).json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/payment-proof', authenticate, requireApproved, async (req, res) => {
@@ -184,7 +204,7 @@ router.post('/:id/payment-proof', authenticate, requireApproved, async (req, res
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/verify-payment', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -207,7 +227,7 @@ router.post('/:id/verify-payment', authenticate, requireApproved, requireManager
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/reject-payment', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -231,7 +251,7 @@ router.post('/:id/reject-payment', authenticate, requireApproved, requireManager
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/cancel', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -257,7 +277,7 @@ router.post('/:id/cancel', authenticate, requireApproved, requireManager, async 
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -297,7 +317,10 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json({
+    ...sanitizeDelivery(data, req.profile, req.user.id),
+    message: 'Rider assigned to pickup → delivery route. Unlock token sent to customer only.',
+  });
 });
 
 router.post('/:id/start-transit', authenticate, requireApproved, async (req, res) => {
@@ -320,7 +343,7 @@ router.post('/:id/start-transit', authenticate, requireApproved, async (req, res
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
@@ -360,7 +383,10 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ ...data, message: 'Smart Box unlocked — retrieve your items within 60 seconds' });
+  res.json({
+    ...sanitizeDelivery(data, req.profile, req.user.id),
+    message: 'Smart Box unlocked — retrieve your items within 60 seconds',
+  });
 });
 
 router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res) => {
@@ -387,7 +413,10 @@ router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ ...data, message: 'Smart Box locked' });
+  res.json({
+    ...sanitizeDelivery(data, req.profile, req.user.id),
+    message: 'Smart Box locked',
+  });
 });
 
 router.post('/:id/complete', authenticate, requireApproved, async (req, res) => {
@@ -407,7 +436,7 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
       .select(DELIVERY_SELECT)
       .single();
     if (error) return res.status(500).json({ error: error.message });
-    return res.json(data);
+    return res.json(sanitizeDelivery(data, req.profile, req.user.id));
   }
 
   if (delivery.customer_id !== req.user.id) {
@@ -434,7 +463,7 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(sanitizeDelivery(data, req.profile, req.user.id));
 });
 
 router.post('/:id/manager-lock', authenticate, requireApproved, requireManager, async (req, res) => {

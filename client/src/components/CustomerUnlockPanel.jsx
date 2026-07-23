@@ -112,7 +112,10 @@ export default function CustomerUnlockPanel({
   return (
     <div className="p-4 rounded-xl bg-primary/10 border border-primary/25 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-bold text-white">Unlock</p>
+        <div>
+          <p className="text-sm font-bold text-white">Unlock at delivery B</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">Your token opens the Smart Box — only you can unlock it</p>
+        </div>
         {delivery.device && (
           <span className="text-xs text-slate-400 font-mono">{delivery.device.device_id} · {deviceLocked ? 'Locked' : 'Open'}</span>
         )}
