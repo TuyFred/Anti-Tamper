@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS public.delivery_requests (
   payment_verified_by UUID REFERENCES public.profiles(id),
   unlock_token TEXT,
   token_expires_at TIMESTAMPTZ,
+  token_sent_at TIMESTAMPTZ,
   token_used_at TIMESTAMPTZ,
   manager_notes TEXT,
   delivered_at TIMESTAMPTZ,

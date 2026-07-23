@@ -38,6 +38,12 @@ function sanitizeDelivery(delivery, profile, userId) {
 
   if (isManager(profile)) {
     sanitized.customer_token_sent = Boolean(delivery.unlock_token);
+    sanitized.token_delivery = delivery.unlock_token ? {
+      channel: 'customer_inbox',
+      recipient_email: delivery.customer?.email || null,
+      recipient_name: delivery.customer?.full_name || null,
+      sent_at: delivery.token_sent_at || delivery.updated_at,
+    } : null;
   }
 
   return sanitized;
@@ -309,6 +315,7 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
       status: 'rider_assigned',
       unlock_token: token,
       token_expires_at: expires.toISOString(),
+      token_sent_at: new Date().toISOString(),
       token_used_at: null,
       updated_at: new Date().toISOString(),
     })
@@ -319,7 +326,7 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
   if (error) return res.status(500).json({ error: error.message });
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Rider assigned to pickup → delivery route. Unlock token sent to customer only.',
+    message: 'Rider assigned to route. Unlock code sent to customer inbox.',
   });
 });
 

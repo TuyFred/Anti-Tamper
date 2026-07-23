@@ -8,18 +8,25 @@ import { api } from '../../lib/api';
 import StatCard from '../ui/StatCard';
 import Badge from '../ui/Badge';
 import { deliveryStatusMeta, formatPrice } from '../../lib/deliveryUtils';
+import CustomerTokenMessage from '../CustomerTokenMessage';
 import { DashboardPanel, DashboardEmptyState } from './DashboardPanel';
 import BoxTrackingPanel from './BoxTrackingPanel';
 
 export default function CustomerDashboard() {
-  const { token } = useAuth();
+  const { token, profile } = useAuth();
   const [deliveries, setDeliveries] = useState([]);
+  const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        setDeliveries(await api.getDeliveries(token));
+        const [list, cfg] = await Promise.all([
+          api.getDeliveries(token),
+          api.getDeliveryConfig(token),
+        ]);
+        setDeliveries(list);
+        setConfig(cfg);
       } catch (err) {
         console.error(err);
       } finally {
@@ -37,6 +44,10 @@ export default function CustomerDashboard() {
   const activeTransit = deliveries.find((d) =>
     ['in_transit', 'rider_assigned', 'payment_verified', 'awaiting_payment', 'payment_submitted'].includes(d.status)
   );
+  const tokenDelivery = deliveries.find((d) =>
+    ['in_transit', 'rider_assigned'].includes(d.status) && d.unlock_token && !d.token_used_at
+  );
+  const companyName = config?.company?.name || 'Anti-Tamper Smart Delivery';
 
   if (loading) {
     return (
@@ -97,6 +108,27 @@ export default function CustomerDashboard() {
           </DashboardEmptyState>
         )}
       </DashboardPanel>
+
+      {tokenDelivery && (
+        <DashboardPanel title="Unlock message">
+          <CustomerTokenMessage
+            delivery={tokenDelivery}
+            customerName={profile?.full_name}
+            customerEmail={profile?.email}
+            companyName={companyName}
+            compact
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              to="/deliveries"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition"
+            >
+              <Key className="w-4 h-4" />
+              Open & unlock
+            </Link>
+          </div>
+        </DashboardPanel>
+      )}
 
       {activeTransit && ['in_transit', 'rider_assigned'].includes(activeTransit.status) && (
         <DashboardPanel title="Live map">

@@ -214,6 +214,9 @@ export default function DeliveryHistoryCard({
               <CustomerUnlockPanel
                 delivery={delivery}
                 token={token}
+                customerName={customerName}
+                customerEmail={profile?.email}
+                companyName={config?.company?.name}
                 onUpdated={onUpdated}
                 onError={onError}
                 onSuccess={onSuccess}

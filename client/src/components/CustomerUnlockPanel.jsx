@@ -1,14 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  Key, Lock, Unlock, CheckCircle2, Loader2, Copy,
+  Key, Lock, Unlock, CheckCircle2, Loader2,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import CustomerTokenMessage from './CustomerTokenMessage';
 
 const AUTO_LOCK_SECONDS = 60;
 
 export default function CustomerUnlockPanel({
   delivery,
   token: authToken,
+  customerName,
+  customerEmail,
+  companyName,
   onUpdated,
   onError,
   onSuccess,
@@ -18,7 +22,6 @@ export default function CustomerUnlockPanel({
   const [locking, setLocking] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [countdown, setCountdown] = useState(null);
-  const [copied, setCopied] = useState(false);
   const autoLockSent = useRef(false);
 
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
@@ -62,16 +65,6 @@ export default function CustomerUnlockPanel({
     })();
   }, [countdown, isUnlocked, deviceLocked, authToken, delivery.id]);
 
-  const handleCopyToken = async () => {
-    const value = delivery.unlock_token || tokenInput;
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { onError?.('Copy failed'); }
-  };
-
   const handleUnlock = async () => {
     const code = tokenInput.trim().toUpperCase();
     if (!code) { onError?.('Enter token'); return; }
@@ -110,25 +103,27 @@ export default function CustomerUnlockPanel({
   if (!isReady && delivery.status !== 'delivered') return null;
 
   return (
-    <div className="p-4 rounded-xl bg-primary/10 border border-primary/25 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-bold text-white">Unlock at delivery B</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">Your token opens the Smart Box — only you can unlock it</p>
-        </div>
-        {delivery.device && (
-          <span className="text-xs text-slate-400 font-mono">{delivery.device.device_id} · {deviceLocked ? 'Locked' : 'Open'}</span>
-        )}
-      </div>
-
-      {delivery.unlock_token && (
-        <div className="flex items-center justify-between gap-2 p-3 rounded-lg bg-surface/80 border border-border">
-          <p className="text-2xl font-mono font-bold text-white tracking-widest">{delivery.unlock_token}</p>
-          <button type="button" onClick={handleCopyToken} className="text-xs text-primary-light flex items-center gap-1 shrink-0">
-            <Copy className="w-3.5 h-3.5" />{copied ? 'OK' : 'Copy'}
-          </button>
-        </div>
+    <div className="space-y-4">
+      {delivery.unlock_token && !isUnlocked && (
+        <CustomerTokenMessage
+          delivery={delivery}
+          customerName={customerName}
+          customerEmail={customerEmail}
+          companyName={companyName}
+          onCopyError={onError}
+        />
       )}
+
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-bold text-white">Open Smart Box</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Enter your code above to unlock at delivery B</p>
+          </div>
+          {delivery.device && (
+            <span className="text-xs text-slate-400 font-mono">{delivery.device.device_id} · {deviceLocked ? 'Locked' : 'Open'}</span>
+          )}
+        </div>
 
       {canUnlock && (
         <div className="space-y-2">
@@ -176,6 +171,7 @@ export default function CustomerUnlockPanel({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

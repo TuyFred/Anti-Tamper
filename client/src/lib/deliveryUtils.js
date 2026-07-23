@@ -70,6 +70,7 @@ export function getDeliveryTimeline(delivery) {
     { key: 'created', label: 'Requested', at: delivery.created_at },
     { key: 'proof', label: 'Proof sent', at: delivery.payment_submitted_at },
     { key: 'paid', label: 'Paid', at: delivery.payment_verified_at },
+    { key: 'token', label: 'Unlock code sent', at: delivery.token_sent_at || (delivery.unlock_token ? delivery.updated_at : null) },
     { key: 'delivered', label: 'Delivered', at: delivery.delivered_at },
   ];
   return items.filter((i) => i.at);

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { api } from '../../lib/api';
+import { mergeDeviceWithGps } from '../../lib/geocode';
 import LiveMap from '../LiveMap';
 import DeviceControl from '../DeviceControl';
 import AlertPanel from '../AlertPanel';

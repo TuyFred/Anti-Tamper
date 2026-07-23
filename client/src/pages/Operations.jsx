@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   ClipboardList, CheckCircle2, UserCheck, Lock, Unlock, Truck,
-  Loader2, Eye, Play, XCircle, Ban, Key,
+  Loader2, Eye, Play, XCircle, Ban, Key, Mail,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -9,7 +9,7 @@ import Badge from '../components/ui/Badge';
 import PaymentProofModal from '../components/PaymentProofModal';
 import {
   deliveryStatusMeta, formatPrice, formatDeliveryRef, formatDeliveryDate,
-  paymentMethodLabel,
+  formatDeliveryDateTime, paymentMethodLabel,
 } from '../lib/deliveryUtils';
 
 const TABS = [
@@ -289,11 +289,30 @@ export default function Operations() {
                       Route: {d.rider.full_name || d.rider.email}
                       {d.device && ` · Box ${d.device.device_id}`}
                     </p>
-                    {d.customer_token_sent && ['rider_assigned', 'in_transit'].includes(d.status) && (
-                      <p className="text-[11px] text-warning/90 flex items-center gap-1">
-                        <Key className="w-3 h-3" />
-                        Customer has unlock token for delivery B
-                      </p>
+                    {(d.token_delivery || d.customer_token_sent) && ['rider_assigned', 'in_transit'].includes(d.status) && (
+                      <div className="p-3 rounded-xl bg-warning/5 border border-warning/20 space-y-1.5">
+                        <p className="text-xs font-semibold text-warning flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5" />
+                          Unlock code sent to customer inbox
+                        </p>
+                        <p className="text-[11px] text-slate-300">
+                          To:{' '}
+                          <span className="font-medium text-white">
+                            {d.token_delivery?.recipient_name || d.customer?.full_name || 'Customer'}
+                          </span>
+                          {(d.token_delivery?.recipient_email || d.customer?.email) && (
+                            <span className="text-slate-400"> · {d.token_delivery?.recipient_email || d.customer?.email}</span>
+                          )}
+                        </p>
+                        {(d.token_delivery?.sent_at || d.token_sent_at) && (
+                          <p className="text-[10px] text-slate-500">
+                            Sent {formatDeliveryDateTime(d.token_delivery?.sent_at || d.token_sent_at)}
+                          </p>
+                        )}
+                        <p className="text-[10px] text-slate-500">
+                          Visible on customer Dashboard and Deliveries only — not shared with the rider.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
