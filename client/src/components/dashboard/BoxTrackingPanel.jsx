@@ -50,7 +50,10 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
     if (token) load();
   }, [token, setInitialDevices, setInitialAlerts, showAlerts, refreshKey]);
 
-  const selectedDevice = devices.find((d) => d.id === selectedId) || devices[0];
+  const selectedDevice = mergeDeviceWithGps(
+    devices.find((d) => d.id === selectedId) || devices[0],
+    gpsUpdates,
+  );
   const onlineCount = devices.filter((d) => d.is_online).length;
   const criticalAlerts = alerts.filter((a) => !a.is_acknowledged && a.severity === 'critical').length;
   const tamperActive = devices.some((d) => d.tamper_status || d.shock_detected);

@@ -1,10 +1,13 @@
 import {
   Lock, Unlock, Bell, BellOff, Wifi, WifiOff,
-  AlertTriangle, Vibrate, Shield, MapPin,
+  AlertTriangle, Vibrate, Shield, MapPin, Loader2,
 } from 'lucide-react';
 import Badge from './ui/Badge';
+import { useReverseGeocode } from '../hooks/useReverseGeocode';
 
 export default function DeviceControl({ device, onUnlock, onLock, onToggleAlarm, loading, canControl = false }) {
+  const { placeName, loading: geoLoading } = useReverseGeocode(device?.latitude, device?.longitude);
+
   if (!device) {
     return (
       <div className="glass-card rounded-xl p-8 text-center text-slate-400 h-full flex flex-col items-center justify-center">
@@ -40,10 +43,28 @@ export default function DeviceControl({ device, onUnlock, onLock, onToggleAlarm,
           <StatusBadge icon={Bell} label="Alarm" value={device.buzzer_active ? 'ACTIVE' : 'Off'} alert={device.buzzer_active} />
         </div>
 
-        {device.latitude && device.longitude && (
-          <div className="flex items-center gap-2 text-xs text-slate-400 bg-surface rounded-xl p-3 border border-border">
-            <MapPin className="w-3.5 h-3.5 text-primary-light shrink-0" />
-            <span className="font-mono">{device.latitude.toFixed(6)}, {device.longitude.toFixed(6)}</span>
+        {device.latitude != null && device.longitude != null && (
+          <div className="p-3 bg-surface rounded-xl border border-border space-y-1">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <MapPin className="w-3.5 h-3.5 text-primary-light shrink-0" />
+              <span className="font-medium text-white">Live location</span>
+            </div>
+            {geoLoading && !placeName ? (
+              <p className="text-xs text-slate-500 flex items-center gap-1 pl-5">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Resolving place name…
+              </p>
+            ) : (
+              placeName && <p className="text-xs text-slate-300 pl-5">{placeName}</p>
+            )}
+            <p className="text-[11px] font-mono text-slate-500 pl-5">
+              {device.latitude.toFixed(6)}, {device.longitude.toFixed(6)}
+            </p>
+            {device.last_seen && (
+              <p className="text-[10px] text-slate-600 pl-5">
+                Updated {new Date(device.last_seen).toLocaleString()}
+              </p>
+            )}
           </div>
         )}
 

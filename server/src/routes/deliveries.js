@@ -272,7 +272,7 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
   if (!['rider_assigned', 'in_transit'].includes(delivery.status)) {
     return res.status(400).json({ error: 'Box is not ready for customer pickup' });
   }
-  if (!token || token !== delivery.unlock_token) {
+  if (!token || token.trim().toUpperCase() !== delivery.unlock_token?.toUpperCase()) {
     return res.status(403).json({ error: 'Invalid unlock token' });
   }
   if (delivery.token_used_at) {
@@ -299,6 +299,33 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ...data, message: 'Smart Box unlocked — retrieve your items within 60 seconds' });
+});
+
+router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+
+  if (delivery.customer_id !== req.user.id && !isManager(req.profile)) {
+    return res.status(403).json({ error: 'Only the customer can lock this delivery box' });
+  }
+  if (!delivery.token_used_at) {
+    return res.status(400).json({ error: 'Unlock with your token first' });
+  }
+  if (!delivery.device) {
+    return res.status(400).json({ error: 'No Smart Box assigned' });
+  }
+
+  await lockDevice(delivery.device);
+
+  const { data, error } = await supabase
+    .from('delivery_requests')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', delivery.id)
+    .select(DELIVERY_SELECT)
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ...data, message: 'Smart Box locked' });
 });
 
 router.post('/:id/complete', authenticate, requireApproved, async (req, res) => {

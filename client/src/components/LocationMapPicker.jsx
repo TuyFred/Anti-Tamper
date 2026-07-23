@@ -1,6 +1,9 @@
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { MapPin, Loader2 } from 'lucide-react';
 import L from 'leaflet';
 import { KIGALI_CENTER } from '../lib/rwandaAddress';
+import { useReverseGeocode } from '../hooks/useReverseGeocode';
 
 const pinIcon = (color) => new L.DivIcon({
   className: 'custom-marker',
@@ -16,6 +19,41 @@ function ClickHandler({ onPick }) {
     },
   });
   return null;
+}
+
+function RecenterMap({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) {
+      map.flyTo([position.lat, position.lng], Math.max(map.getZoom(), 14), { duration: 0.6 });
+    }
+  }, [position, map]);
+  return null;
+}
+
+function LocationInfo({ lat, lng }) {
+  const { placeName, loading } = useReverseGeocode(lat, lng);
+
+  return (
+    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-surface/80 border border-border">
+      <MapPin className="w-4 h-4 text-primary-light shrink-0 mt-0.5" />
+      <div className="min-w-0">
+        {loading && !placeName ? (
+          <p className="text-xs text-slate-500 flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Finding location name…
+          </p>
+        ) : (
+          <p className="text-xs text-white font-medium leading-snug">
+            {placeName || 'Selected map location'}
+          </p>
+        )}
+        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+          {lat.toFixed(5)}, {lng.toFixed(5)}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default function LocationMapPicker({
@@ -43,15 +81,18 @@ export default function LocationMapPicker({
           />
           <ClickHandler onPick={(lat, lng) => onChange({ lat, lng })} />
           {position && (
-            <Marker position={[position.lat, position.lng]} icon={pinIcon(pinColor)} />
+            <>
+              <RecenterMap position={position} />
+              <Marker position={[position.lat, position.lng]} icon={pinIcon(pinColor)}>
+                <Popup>
+                  <LocationInfo lat={position.lat} lng={position.lng} />
+                </Popup>
+              </Marker>
+            </>
           )}
         </MapContainer>
       </div>
-      {position && (
-        <p className="text-[10px] text-slate-500 font-mono">
-          {position.lat.toFixed(5)}, {position.lng.toFixed(5)}
-        </p>
-      )}
+      {position && <LocationInfo lat={position.lat} lng={position.lng} />}
     </div>
   );
 }

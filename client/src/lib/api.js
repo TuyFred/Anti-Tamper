@@ -83,6 +83,8 @@ export const api = {
     apiFetch(`/api/deliveries/${id}/start-transit`, { method: 'POST' }, token),
   unlockWithToken: (token, id, tokenCode) =>
     apiFetch(`/api/deliveries/${id}/unlock`, { method: 'POST', body: JSON.stringify({ token: tokenCode }) }, token),
+  customerLockDelivery: (token, id) =>
+    apiFetch(`/api/deliveries/${id}/customer-lock`, { method: 'POST' }, token),
   completeDelivery: (token, id) =>
     apiFetch(`/api/deliveries/${id}/complete`, { method: 'POST' }, token),
   managerLockDelivery: (token, id) =>
