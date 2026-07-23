@@ -9,11 +9,20 @@ export default function WhatsAppButton({ className = '' }) {
       rel="noopener noreferrer"
       title={`WhatsApp business support ${WHATSAPP_DISPLAY}`}
       aria-label="Contact Smart Box Delivery on WhatsApp"
-      className={`fixed z-50 flex items-center gap-2.5 pl-4 pr-5 py-3.5 sm:py-4 rounded-full bg-[#25D366] hover:bg-[#20bd5a] active:scale-95 text-white font-semibold text-sm sm:text-base shadow-xl shadow-[#25D366]/35 transition-all bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] sm:bottom-6 sm:right-6 ${className}`}
+      className={[
+        'fixed z-50 flex items-center justify-center',
+        'rounded-full bg-[#25D366] text-white',
+        'shadow-lg shadow-[#25D366]/30',
+        'hover:bg-[#20bd5a] active:scale-95 transition-all',
+        // Mobile: compact icon-only FAB
+        'w-11 h-11 sm:w-auto sm:h-auto sm:gap-2 sm:pl-3.5 sm:pr-4 sm:py-2.5',
+        'bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(0.875rem,env(safe-area-inset-right))]',
+        'sm:bottom-6 sm:right-6',
+        className,
+      ].join(' ')}
     >
-      <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-      <span className="max-[380px]:hidden sm:inline">WhatsApp Business</span>
-      <span className="hidden max-[380px]:inline">Chat</span>
+      <MessageCircle className="w-5 h-5 sm:w-[1.125rem] sm:h-[1.125rem] shrink-0" strokeWidth={2.25} />
+      <span className="hidden sm:inline text-sm font-semibold whitespace-nowrap">WhatsApp</span>
     </a>
   );
 }

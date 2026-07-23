@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   Users, UserCheck, UserX, Search, Pencil, Trash2,
-  Shield, Clock, UserPlus, Mail, Lock, User,
+  Shield, Clock, UserPlus, Mail, Lock, User, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -54,6 +54,9 @@ export default function AdminPanel() {
   const [addForm, setAddForm] = useState(EMPTY_ADD_FORM);
   const [addError, setAddError] = useState('');
   const [editForm, setEditForm] = useState({ full_name: '', role_id: '', is_approved: false });
+  const [resetPasswordUser, setResetPasswordUser] = useState(null);
+  const [resetPasswordForm, setResetPasswordForm] = useState({ password: '', confirmPassword: '' });
+  const [resetPasswordError, setResetPasswordError] = useState('');
 
   const loadData = async () => {
     try {
@@ -171,6 +174,38 @@ export default function AdminPanel() {
       await loadData();
     } catch (err) {
       alert(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openResetPassword = (user) => {
+    setResetPasswordUser(user);
+    setResetPasswordForm({ password: '', confirmPassword: '' });
+    setResetPasswordError('');
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resetPasswordUser) return;
+
+    if (resetPasswordForm.password.length < 6) {
+      setResetPasswordError('Password must be at least 6 characters');
+      return;
+    }
+    if (resetPasswordForm.password !== resetPasswordForm.confirmPassword) {
+      setResetPasswordError('Passwords do not match');
+      return;
+    }
+
+    setResetPasswordError('');
+    setActionLoading(`reset-${resetPasswordUser.id}`);
+    try {
+      await api.resetUserPassword(token, resetPasswordUser.id, resetPasswordForm.password);
+      setResetPasswordUser(null);
+      setResetPasswordForm({ password: '', confirmPassword: '' });
+    } catch (err) {
+      setResetPasswordError(err.message);
     } finally {
       setActionLoading(null);
     }
@@ -377,6 +412,13 @@ export default function AdminPanel() {
                             title="Edit"
                           >
                             <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openResetPassword(user)}
+                            className="p-2 rounded-lg text-slate-400 hover:text-warning hover:bg-warning/10 transition"
+                            title="Reset password"
+                          >
+                            <KeyRound className="w-4 h-4" />
                           </button>
                           {!isSelf && (
                             <button
@@ -619,6 +661,85 @@ export default function AdminPanel() {
               </button>
             </div>
           </div>
+        )}
+      </Modal>
+
+      <Modal open={!!resetPasswordUser} onClose={() => setResetPasswordUser(null)} title="Reset password" size="sm">
+        {resetPasswordUser && (
+          <form onSubmit={handleResetPassword} className="space-y-5">
+            <div className="p-3 bg-surface rounded-xl border border-border">
+              <p className="text-sm text-white font-medium">{resetPasswordUser.full_name || resetPasswordUser.email}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{resetPasswordUser.email}</p>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Set a new password for this user. They will use it on their next login.
+            </p>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">New password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="password"
+                  placeholder="Min. 6 characters"
+                  value={resetPasswordForm.password}
+                  onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, password: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-border text-white placeholder-slate-600 focus:border-primary focus:outline-none"
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">Confirm password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="password"
+                  placeholder="Repeat password"
+                  value={resetPasswordForm.confirmPassword}
+                  onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, confirmPassword: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-border text-white placeholder-slate-600 focus:border-primary focus:outline-none"
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+
+            {resetPasswordError && (
+              <div className="p-3 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger">
+                {resetPasswordError}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setResetPasswordUser(null)}
+                className="flex-1 py-2.5 rounded-xl border border-border text-slate-400 hover:text-white hover:bg-surface-lighter transition text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={actionLoading === `reset-${resetPasswordUser.id}`}
+                className="flex-1 py-2.5 rounded-xl bg-warning hover:bg-warning/90 text-surface text-sm font-semibold transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {actionLoading === `reset-${resetPasswordUser.id}` ? (
+                  <div className="w-4 h-4 border-2 border-surface/30 border-t-surface rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <KeyRound className="w-4 h-4" />
+                    Reset password
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         )}
       </Modal>
 

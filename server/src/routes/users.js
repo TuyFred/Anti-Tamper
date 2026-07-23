@@ -178,6 +178,24 @@ router.post('/:userId/reject', authenticate, requireApproved, requireAdmin, asyn
   res.json({ success: true });
 });
 
+router.post('/:userId/reset-password', authenticate, requireApproved, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { password } = req.body;
+
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password is required' });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+  if (error) return res.status(400).json({ error: error.message });
+
+  res.json({ success: true });
+});
+
 router.patch('/:userId/role', authenticate, requireApproved, requireAdmin, async (req, res) => {
   const { userId } = req.params;
   const { role_id } = req.body;

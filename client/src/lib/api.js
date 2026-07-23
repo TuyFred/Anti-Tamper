@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from './runtimeConfig';
+
+const API_URL = getApiBaseUrl();
 
 export async function apiFetch(path, options = {}, token) {
   const headers = {
@@ -35,6 +37,8 @@ export const api = {
     apiFetch(`/api/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role_id: roleId }) }, token),
   updateUser: (token, userId, payload) =>
     apiFetch(`/api/users/${userId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token),
+  resetUserPassword: (token, userId, password) =>
+    apiFetch(`/api/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }, token),
   deleteUser: (token, userId) =>
     apiFetch(`/api/users/${userId}`, { method: 'DELETE' }, token),
   getRoles: (token) => apiFetch('/api/users/roles', {}, token),

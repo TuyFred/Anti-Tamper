@@ -4,7 +4,9 @@ import { useAuth } from './AuthContext';
 
 const SocketContext = createContext(null);
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+import { getSocketBaseUrl } from '../lib/runtimeConfig';
+
+const SOCKET_URL = getSocketBaseUrl();
 
 export function SocketProvider({ children }) {
   const { token, isApproved } = useAuth();
