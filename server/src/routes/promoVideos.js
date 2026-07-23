@@ -7,6 +7,7 @@ import {
   mimeFromUrl,
   deleteLocalVideoFile,
 } from '../middleware/promoUpload.js';
+import { normalizePromoVideoRow, normalizePromoVideoRows } from '../lib/videoUrl.js';
 
 const router = Router();
 
@@ -31,10 +32,10 @@ router.get('/public/:section', async (req, res) => {
     .order('created_at', { ascending: true });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ videos: data || [] });
+  res.json({ videos: normalizePromoVideoRows(data, req) });
 });
 
-router.get('/', authenticate, requireApproved, requireManager, async (_req, res) => {
+router.get('/', authenticate, requireApproved, requireManager, async (req, res) => {
   const { data, error } = await supabase
     .from('promo_videos')
     .select('*')
@@ -42,7 +43,7 @@ router.get('/', authenticate, requireApproved, requireManager, async (_req, res)
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+  res.json(normalizePromoVideoRows(data, req));
 });
 
 router.post('/upload', authenticate, requireApproved, requireManager, (req, res) => {
@@ -58,7 +59,7 @@ router.post('/upload', authenticate, requireApproved, requireManager, (req, res)
     }
 
     res.status(201).json({
-      url: publicVideoUrl(req.file.filename),
+      url: publicVideoUrl(req.file.filename, req),
       filename: req.file.filename,
       mimeType: req.file.mimetype || mimeFromUrl(req.file.filename),
       size: req.file.size,
@@ -89,7 +90,7 @@ router.post('/', authenticate, requireApproved, requireManager, async (req, res)
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
+  res.status(201).json(normalizePromoVideoRow(data, req));
 });
 
 router.patch('/:id', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -117,7 +118,7 @@ router.patch('/:id', authenticate, requireApproved, requireManager, async (req, 
 
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Video not found' });
-  res.json(data);
+  res.json(normalizePromoVideoRow(data, req));
 });
 
 router.post('/broadcast/stop', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -140,7 +141,7 @@ router.post('/:id/play', authenticate, requireApproved, requireManager, async (r
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(normalizePromoVideoRow(data, req));
 });
 
 router.post('/:id/stop', authenticate, requireApproved, requireManager, async (req, res) => {
@@ -155,7 +156,7 @@ router.post('/:id/stop', authenticate, requireApproved, requireManager, async (r
 
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Video not found' });
-  res.json(data);
+  res.json(normalizePromoVideoRow(data, req));
 });
 
 router.delete('/:id', authenticate, requireApproved, requireManager, async (req, res) => {

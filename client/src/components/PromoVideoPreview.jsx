@@ -1,4 +1,4 @@
-import { isDirectVideo, isYoutube, mimeFromUrl } from '../lib/videoUtils';
+import { isDirectVideo, isYoutube, mimeFromUrl, resolvePromoVideoUrl } from '../lib/videoUtils';
 
 function youtubeAdminEmbed(url) {
   if (!url) return null;
@@ -24,7 +24,7 @@ export default function PromoVideoPreview({
   className = '',
   compact = false,
 }) {
-  const src = blobUrl || url;
+  const src = blobUrl || resolvePromoVideoUrl(url);
   if (!src) {
     return (
       <div className={`bg-surface-lighter flex items-center justify-center ${className}`}>

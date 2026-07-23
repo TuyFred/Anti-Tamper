@@ -1,3 +1,51 @@
+import { getApiBaseUrl } from './runtimeConfig';
+
+export const FALLBACK_PROMO_VIDEO = 'https://assets.mixkit.co/videos/preview/mixkit-man-delivering-a-package-on-a-motorcycle-42805-large.mp4';
+
+/** Rewrite localhost / relative upload URLs to the production API host. */
+export function resolvePromoVideoUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+
+  const apiBase = getApiBaseUrl();
+
+  if (trimmed.startsWith('/uploads/')) {
+    return `${apiBase}${trimmed}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const isLocal = /localhost|127\.0\.0\.1/i.test(parsed.hostname);
+    const isUploadPath = parsed.pathname.includes('/uploads/promo-videos/');
+
+    if (isLocal && isUploadPath) {
+      return `${apiBase}${parsed.pathname}${parsed.search}`;
+    }
+
+    if (parsed.protocol === 'http:' && apiBase.startsWith('https:') && isUploadPath) {
+      return `${apiBase}${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+export function normalizePromoVideo(video) {
+  if (!video) return video;
+  return {
+    ...video,
+    video_url: resolvePromoVideoUrl(video.video_url),
+    poster_url: video.poster_url ? resolvePromoVideoUrl(video.poster_url) : video.poster_url,
+  };
+}
+
+export function normalizePromoVideos(videos) {
+  return (videos || []).map(normalizePromoVideo);
+}
+
 export function youtubeEmbedUrl(url, { muted = false } = {}) {
   if (!url) return null;
   try {

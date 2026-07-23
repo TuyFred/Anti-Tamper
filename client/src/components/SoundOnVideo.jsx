@@ -17,6 +17,7 @@ export default function SoundOnVideo({
   muted: controlledMuted,
   onMutedChange,
   muteButtonClassName = 'absolute top-3 right-3 z-10 p-2.5 rounded-full bg-black/60 border border-white/20 text-white hover:bg-black/80 transition',
+  onError,
 }) {
   const videoRef = useRef(null);
   const [internalMuted, setInternalMuted] = useState(false);
@@ -86,6 +87,7 @@ export default function SoundOnVideo({
         muted={userMuted}
         poster={poster}
         className={className}
+        onError={onError}
       >
         <source src={src} type={type} />
       </video>

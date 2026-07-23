@@ -3,13 +3,14 @@ import { ChevronLeft, ChevronRight, Megaphone, Volume2, VolumeX } from 'lucide-r
 import { api } from '../lib/api';
 import {
   isDirectVideo, isYoutube, mimeFromUrl, youtubeSlideshowEmbed,
+  FALLBACK_PROMO_VIDEO, normalizePromoVideos, resolvePromoVideoUrl,
 } from '../lib/videoUtils';
 import SoundOnVideo from './SoundOnVideo';
 
 const POLL_MS = 8000;
 const YOUTUBE_SLIDE_MS = 12000;
 const FALLBACK_SLIDE_MS = 18000;
-const FALLBACK_VIDEO = 'https://assets.mixkit.co/videos/preview/mixkit-man-delivering-a-package-on-a-motorcycle-42805-large.mp4';
+const FALLBACK_VIDEO = FALLBACK_PROMO_VIDEO;
 
 export default function PromoVideoSlideshow() {
   const videoRef = useRef(null);
@@ -20,14 +21,17 @@ export default function PromoVideoSlideshow() {
   const [userMuted, setUserMuted] = useState(false);
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [fade, setFade] = useState(true);
+  const [useFallback, setUseFallback] = useState(false);
 
   const loadSlides = useCallback(async () => {
     try {
-      const list = await api.getPublicPromoVideos('roles');
+      const list = normalizePromoVideos(await api.getPublicPromoVideos('roles'));
       setSlides(list);
+      setUseFallback(false);
       setIndex((i) => (list.length ? Math.min(i, list.length - 1) : 0));
     } catch {
       setSlides([]);
+      setUseFallback(true);
     }
   }, []);
 
@@ -37,7 +41,7 @@ export default function PromoVideoSlideshow() {
     return () => clearInterval(id);
   }, [loadSlides]);
 
-  const live = slides.length > 0;
+  const live = slides.length > 0 && !useFallback;
   const current = slides[index];
   const multi = slides.length > 1;
 
@@ -186,6 +190,15 @@ export default function PromoVideoSlideshow() {
   const direct = current && isDirectVideo(current.video_url);
   const youtube = current && isYoutube(current.video_url);
   const embedUrl = youtube ? youtubeSlideshowEmbed(current.video_url, { muted: userMuted }) : null;
+  const videoSrc = current ? resolvePromoVideoUrl(current.video_url) : FALLBACK_VIDEO;
+
+  const handleVideoError = () => {
+    if (slides.length <= 1) {
+      setUseFallback(true);
+      return;
+    }
+    advanceSlide();
+  };
 
   return (
     <div className="glass-card rounded-2xl overflow-hidden shadow-xl shadow-primary/5 ring-1 ring-primary/10">
@@ -245,6 +258,9 @@ export default function PromoVideoSlideshow() {
               onMutedChange={setUserMuted}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-surface/30 pointer-events-none" />
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-surface/90 border border-border text-slate-400 text-[10px] font-medium z-10">
+              Smart Box showcase
+            </div>
           </>
         )}
 
@@ -260,8 +276,9 @@ export default function PromoVideoSlideshow() {
                 muted={userMuted}
                 poster={current.poster_url || undefined}
                 className="absolute inset-0 w-full h-full object-cover"
+                onError={handleVideoError}
               >
-                <source src={current.video_url} type={mimeFromUrl(current.video_url)} />
+                <source src={videoSrc} type={mimeFromUrl(videoSrc)} />
               </video>
             )}
             {youtube && embedUrl && (

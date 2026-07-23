@@ -9,7 +9,7 @@ import { api } from '../lib/api';
 import { formatPrice } from '../lib/deliveryUtils';
 import { DASHBOARD_PATH, TRACKING_PATH, HOME_NAV_LINKS, getHomeAppLinks } from '../lib/navigation';
 import RolesPromoSection from '../components/RolesPromoSection';
-import SoundOnVideo from '../components/SoundOnVideo';
+import HomeRiderVideo from '../components/HomeRiderVideo';
 import WhatsAppButton from '../components/WhatsAppButton';
 import { whatsappUrl, WHATSAPP_DISPLAY } from '../lib/whatsapp';
 import { NavIcon } from '../components/dashboard/DashboardPanel';
@@ -61,7 +61,6 @@ const FEATURES = [
 ];
 
 const RIDER_IMG = '/images/rider-hero.png';
-const RIDER_VIDEO = 'https://assets.mixkit.co/videos/preview/mixkit-man-delivering-a-package-on-a-motorcycle-42805-large.mp4';
 
 export default function HomePage() {
   const { session, isCustomer, isRider, isManager } = useAuth();
@@ -314,20 +313,7 @@ export default function HomePage() {
               <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-success" /> OpenStreetMap pin for exact pickup & delivery</li>
             </ul>
           </div>
-          <div className="relative rounded-2xl overflow-hidden border border-border shadow-2xl aspect-video bg-black">
-            <SoundOnVideo
-              src={RIDER_VIDEO}
-              type="video/mp4"
-              poster={RIDER_IMG}
-              className="w-full h-full object-cover"
-              overlayClassName="w-full h-full"
-            />
-            <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-              <p className="text-sm font-semibold text-white flex items-center gap-2">
-                <Truck className="w-4 h-4" /> Smart Box motor delivery
-              </p>
-            </div>
-          </div>
+          <HomeRiderVideo poster={RIDER_IMG} />
         </div>
       </section>
 

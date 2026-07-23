@@ -45,7 +45,11 @@ export const config = {
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || process.env.SMTP_USER || 'alerts@anti-tamper.local',
   },
-  publicBaseUrl: process.env.PUBLIC_BASE_URL || `http://localhost:${parseInt(process.env.PORT || '3001', 10)}`,
+  publicBaseUrl: (
+    process.env.PUBLIC_BASE_URL
+    || process.env.RENDER_EXTERNAL_URL
+    || `http://localhost:${parseInt(process.env.PORT || '3001', 10)}`
+  ).replace(/\/$/, ''),
   upload: {
     maxPromoVideoBytes: parseInt(process.env.MAX_PROMO_VIDEO_MB || '200', 10) * 1024 * 1024,
   },

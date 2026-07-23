@@ -317,6 +317,18 @@ export default function PromoVideoManager() {
             />
           </div>
           <div>
+            <label className="text-xs text-slate-400 block mb-1">Show on</label>
+            <select
+              value={form.section}
+              onChange={(e) => setForm({ ...form, section: e.target.value })}
+              className="w-full px-4 py-2.5 bg-surface rounded-xl border border-border text-white text-sm"
+            >
+              <option value="roles">Homepage — Roles promo slideshow</option>
+              <option value="rider">Homepage — Motor rider section</option>
+            </select>
+            <p className="text-[10px] text-slate-500 mt-1">Upload on production (Render) so videos use HTTPS URLs.</p>
+          </div>
+          <div>
             <label className="text-xs text-slate-400 block mb-1">Upload video file</label>
             <label className="flex items-center gap-3 w-full px-4 py-3 bg-surface rounded-xl border border-dashed border-border text-sm text-slate-300 cursor-pointer hover:border-primary/50 hover:bg-surface-lighter transition">
               <Upload className="w-4 h-4 text-primary-light shrink-0" />

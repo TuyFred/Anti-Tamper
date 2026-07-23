@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { config } from '../config/supabase.js';
+import { publicVideoUrl as buildPublicVideoUrl } from '../lib/videoUrl.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/promo-videos');
@@ -53,8 +54,8 @@ export function mimeFromUrl(url) {
   return map[ext] || 'video/mp4';
 }
 
-export function publicVideoUrl(filename) {
-  return `${config.publicBaseUrl}/uploads/promo-videos/${filename}`;
+export function publicVideoUrl(filename, req) {
+  return buildPublicVideoUrl(filename, req);
 }
 
 function isAllowedVideo(file) {

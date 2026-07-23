@@ -27,7 +27,15 @@ if (config.nodeEnv === 'production') {
 app.use(cors({ origin: corsOriginCallback, credentials: true }));
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  maxAge: config.nodeEnv === 'production' ? '7d' : 0,
+  setHeaders(res, filePath) {
+    if (/\.(mp4|webm|ogg|mov|m4v)$/i.test(filePath)) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  },
+}));
 
 app.get('/health', (_req, res) => {
   res.json({
