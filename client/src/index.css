@@ -85,6 +85,21 @@ body {
   animation: slide-in-right 0.28s ease-out forwards;
 }
 
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.28s ease-out forwards;
+}
+
 @media (max-width: 640px) {
   .mobile-touch-target {
     min-height: 44px;

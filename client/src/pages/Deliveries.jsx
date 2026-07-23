@@ -1,19 +1,16 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  ArrowRight, Star, Loader2, Radio, Truck,
-} from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Loader2, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
-import Badge from '../components/ui/Badge';
-import { deliveryStatusMeta, formatPrice } from '../lib/deliveryUtils';
-import DeliveryRequestFormSection from '../components/DeliveryRequestFormSection';
-import CustomerUnlockPanel from '../components/CustomerUnlockPanel';
-import StarRating from '../components/StarRating';
-import DeliveryPaymentStep, {
-  DeliveryProgressBar,
-  DeliveryArrivedBanner,
-} from '../components/DeliveryPaymentStep';
+import { isActiveDelivery, isCompletedDelivery } from '../lib/deliveryUtils';
+import DeliveryBookingModal from '../components/DeliveryRequestFormSection';
+import DeliveryHistoryCard from '../components/DeliveryHistoryCard';
+
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'completed', label: 'Completed' },
+];
 
 export default function Deliveries() {
   const { token } = useAuth();
@@ -22,6 +19,8 @@ export default function Deliveries() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [filter, setFilter] = useState('all');
 
   const [creating, setCreating] = useState(false);
   const [proofFiles, setProofFiles] = useState({});
@@ -53,14 +52,27 @@ export default function Deliveries() {
     if (token) load();
   }, [token]);
 
+  const filtered = useMemo(() => {
+    if (filter === 'active') return deliveries.filter((d) => isActiveDelivery(d.status));
+    if (filter === 'completed') return deliveries.filter((d) => isCompletedDelivery(d.status));
+    return deliveries;
+  }, [deliveries, filter]);
+
+  const counts = useMemo(() => ({
+    all: deliveries.length,
+    active: deliveries.filter((d) => isActiveDelivery(d.status)).length,
+    completed: deliveries.filter((d) => isCompletedDelivery(d.status)).length,
+  }), [deliveries]);
+
   const handleCreateDelivery = async (payload) => {
     setCreating(true);
     setError('');
     try {
       await api.createDelivery(token, payload);
-      setSuccess('Delivery created — choose payment method, pay, then upload proof on your delivery below.');
+      setSuccess('Delivery created.');
+      setFilter('active');
       await load();
-      setTimeout(() => setSuccess(''), 6000);
+      setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -79,7 +91,7 @@ export default function Deliveries() {
   const handleUploadProof = async (deliveryId) => {
     const file = proofFiles[deliveryId];
     if (!file) {
-      setError('Select a payment proof image first');
+      setError('Select payment proof first');
       return;
     }
     setUploadingId(deliveryId);
@@ -91,9 +103,9 @@ export default function Deliveries() {
         payment_method: paymentMethods[deliveryId] || 'momo',
       });
       setProofFiles((prev) => ({ ...prev, [deliveryId]: null }));
-      setSuccess('Payment proof saved — wait for manager to confirm. Status will show Paid when verified.');
+      setSuccess('Proof uploaded.');
       await load();
-      setTimeout(() => setSuccess(''), 6000);
+      setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -104,7 +116,7 @@ export default function Deliveries() {
   const handleReview = async (deliveryId) => {
     const rev = reviews[deliveryId];
     if (!rev?.rating) {
-      setError('Select a star rating first');
+      setError('Select a rating');
       return;
     }
     setError('');
@@ -114,7 +126,7 @@ export default function Deliveries() {
         rating: rev.rating,
         comment: rev.comment,
       });
-      setSuccess('Thank you for your review!');
+      setSuccess('Review submitted.');
       await load();
     } catch (err) {
       setError(err.message);
@@ -130,126 +142,90 @@ export default function Deliveries() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {error && (
-        <div className="p-4 bg-danger/10 border border-danger/25 rounded-xl text-sm text-danger">{error}</div>
+        <div className="p-3 bg-danger/10 border border-danger/25 rounded-xl text-sm text-danger">{error}</div>
       )}
       {success && (
-        <div className="p-4 bg-success/10 border border-success/25 rounded-xl text-sm text-success">{success}</div>
+        <div className="p-3 bg-success/10 border border-success/25 rounded-xl text-sm text-success">{success}</div>
       )}
 
-      <DeliveryRequestFormSection
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h3 className="text-lg font-bold text-white">History</h3>
+        <button
+          type="button"
+          onClick={() => setBookingOpen(true)}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-semibold rounded-xl transition touch-manipulation shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          New delivery
+        </button>
+      </div>
+
+      <DeliveryBookingModal
+        open={bookingOpen}
+        onClose={() => setBookingOpen(false)}
         onSubmit={handleCreateDelivery}
         estimateApi={estimateApi}
+        submitting={creating}
       />
 
-      <section className="space-y-4">
-        <div>
-          <h3 className="text-lg font-bold text-white">My deliveries</h3>
-          <p className="text-xs text-slate-500 mt-1">
-            Pay → upload proof → manager confirms → track → unlock with token at your address
-          </p>
+      {deliveries.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFilter(f.id)}
+              className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition touch-manipulation ${
+                filter === f.id
+                  ? 'bg-primary text-white'
+                  : 'bg-surface border border-border text-slate-400 hover:text-white'
+              }`}
+            >
+              {f.label}
+              <span className="ml-1.5 opacity-70">({counts[f.id]})</span>
+            </button>
+          ))}
         </div>
-        {deliveries.length === 0 ? (
-          <div className="glass-card rounded-xl p-12 text-center text-slate-500 text-sm">
-            No deliveries yet. Create your first request above using Rwanda province → village address fields.
-          </div>
-        ) : (
-          deliveries.map((d) => {
-            const meta = deliveryStatusMeta(d.status);
-            const showPayment = ['awaiting_payment', 'payment_submitted', 'payment_verified', 'rider_assigned', 'in_transit'].includes(d.status);
-            const showUnlock = ['rider_assigned', 'in_transit'].includes(d.status);
-            const showTracking = ['payment_verified', 'rider_assigned', 'in_transit'].includes(d.status);
-            const showReview = d.status === 'delivered';
+      )}
 
-            return (
-              <div key={d.id} className="glass-card rounded-xl p-5 space-y-4">
-                <DeliveryProgressBar status={d.status} />
-
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 text-sm text-white">
-                      <span>{d.pickup_address}</span>
-                      <ArrowRight className="w-4 h-4 text-slate-500" />
-                      <span>{d.delivery_address}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {formatPrice(d.calculated_price, d.currency)} · {d.distance_km} km
-                      {d.device && ` · Box ${d.device.device_id}`}
-                    </p>
-                  </div>
-                  <Badge variant={meta.variant}>{meta.label}</Badge>
-                </div>
-
-                {showPayment && (
-                  <DeliveryPaymentStep
-                    delivery={d}
-                    config={config}
-                    paymentMethod={paymentMethods[d.id] || d.payment_method || 'momo'}
-                    onPaymentMethodChange={(method) => setPaymentMethods({ ...paymentMethods, [d.id]: method })}
-                    proofFile={proofFiles[d.id]}
-                    onProofFileChange={(file) => setProofFiles({ ...proofFiles, [d.id]: file })}
-                    onSubmitProof={() => handleUploadProof(d.id)}
-                    uploading={uploadingId === d.id}
-                  />
-                )}
-
-                {showTracking && d.status !== 'awaiting_payment' && d.status !== 'payment_submitted' && (
-                  <Link
-                    to="/tracking"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-sm font-medium text-primary-light hover:bg-primary/15 transition"
-                  >
-                    <Radio className="w-4 h-4" />
-                    Track delivery on live map
-                    <Truck className="w-4 h-4 opacity-70" />
-                  </Link>
-                )}
-
-                {showUnlock && (
-                  <>
-                    <DeliveryArrivedBanner delivery={d} />
-                    <CustomerUnlockPanel
-                      delivery={d}
-                      token={token}
-                      onUpdated={load}
-                      onError={setError}
-                      onSuccess={(msg) => {
-                        setSuccess(msg);
-                        setError('');
-                      }}
-                    />
-                  </>
-                )}
-
-                {showReview && (
-                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
-                    <p className="text-sm font-medium text-white flex items-center gap-2">
-                      <Star className="w-4 h-4 text-warning" /> Rate this delivery
-                    </p>
-                    <StarRating
-                      value={reviews[d.id]?.rating || 0}
-                      onChange={(r) => setReviews({ ...reviews, [d.id]: { ...reviews[d.id], rating: r } })}
-                    />
-                    <textarea
-                      placeholder="Your comment (optional)"
-                      value={reviews[d.id]?.comment || ''}
-                      onChange={(e) => setReviews({ ...reviews, [d.id]: { ...reviews[d.id], rating: reviews[d.id]?.rating || 5, comment: e.target.value } })}
-                      className="w-full px-4 py-2 bg-surface rounded-xl border border-border text-white text-sm min-h-[80px]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleReview(d.id)}
-                      className="px-4 py-2 bg-warning/15 text-warning border border-warning/25 rounded-lg text-sm font-medium"
-                    >
-                      Submit review
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </section>
+      {deliveries.length === 0 ? (
+        <div className="glass-card rounded-xl p-10 text-center text-slate-500 text-sm">
+          No deliveries yet.
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass-card rounded-xl p-8 text-center text-slate-500 text-sm">
+          No {filter} deliveries.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((d) => (
+            <DeliveryHistoryCard
+              key={d.id}
+              delivery={d}
+              config={config}
+              paymentMethod={paymentMethods[d.id] || d.payment_method || 'momo'}
+              onPaymentMethodChange={(method) => setPaymentMethods({ ...paymentMethods, [d.id]: method })}
+              proofFile={proofFiles[d.id]}
+              onProofFileChange={(file) => setProofFiles({ ...proofFiles, [d.id]: file })}
+              onSubmitProof={() => handleUploadProof(d.id)}
+              uploading={uploadingId === d.id}
+              review={reviews[d.id]}
+              onReviewChange={(rev) => setReviews({ ...reviews, [d.id]: rev })}
+              onSubmitReview={() => handleReview(d.id)}
+              token={token}
+              onUpdated={load}
+              onError={setError}
+              onSuccess={(msg) => {
+                setSuccess(msg);
+                setError('');
+              }}
+              defaultExpanded={isActiveDelivery(d.status)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -10,7 +10,7 @@ export default function WhatsAppButton({ className = '' }) {
       title={`WhatsApp business support ${WHATSAPP_DISPLAY}`}
       aria-label="Contact Smart Box Delivery on WhatsApp"
       className={[
-        'fixed z-50 flex items-center justify-center',
+        'fixed z-40 flex items-center justify-center',
         'rounded-full bg-[#25D366] text-white',
         'shadow-lg shadow-[#25D366]/30',
         'hover:bg-[#20bd5a] active:scale-95 transition-all',

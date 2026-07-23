@@ -50,6 +50,12 @@ router.get('/public/config', (_req, res) => {
     currency: deliveryConfig.currency,
     baseFare: deliveryConfig.baseFare,
     ratePerKm: deliveryConfig.ratePerKm,
+    vatRate: deliveryConfig.vatRate,
+    company: {
+      name: deliveryConfig.companyName,
+      tin: deliveryConfig.companyTin,
+      address: deliveryConfig.companyAddress,
+    },
     payment: deliveryConfig.payment,
     whatsapp: deliveryConfig.whatsapp,
   });
@@ -65,6 +71,12 @@ router.get('/config', authenticate, requireApproved, (_req, res) => {
     currency: deliveryConfig.currency,
     baseFare: deliveryConfig.baseFare,
     ratePerKm: deliveryConfig.ratePerKm,
+    vatRate: deliveryConfig.vatRate,
+    company: {
+      name: deliveryConfig.companyName,
+      tin: deliveryConfig.companyTin,
+      address: deliveryConfig.companyAddress,
+    },
     payment: deliveryConfig.payment,
     whatsapp: deliveryConfig.whatsapp,
   });
@@ -189,6 +201,56 @@ router.post('/:id/verify-payment', authenticate, requireApproved, requireManager
       payment_verified_at: new Date().toISOString(),
       payment_verified_by: req.user.id,
       updated_at: new Date().toISOString(),
+    })
+    .eq('id', delivery.id)
+    .select(DELIVERY_SELECT)
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+router.post('/:id/reject-payment', authenticate, requireApproved, requireManager, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+  if (delivery.status !== 'payment_submitted') {
+    return res.status(400).json({ error: 'No payment proof to reject' });
+  }
+
+  const { data, error } = await supabase
+    .from('delivery_requests')
+    .update({
+      status: 'awaiting_payment',
+      payment_proof_url: null,
+      payment_submitted_at: null,
+      updated_at: new Date().toISOString(),
+      manager_notes: req.body?.reason?.trim() || delivery.manager_notes,
+    })
+    .eq('id', delivery.id)
+    .select(DELIVERY_SELECT)
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+router.post('/:id/cancel', authenticate, requireApproved, requireManager, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+  if (['delivered', 'cancelled'].includes(delivery.status)) {
+    return res.status(400).json({ error: 'Cannot cancel this delivery' });
+  }
+
+  if (delivery.device) {
+    await lockDevice(delivery.device);
+  }
+
+  const { data, error } = await supabase
+    .from('delivery_requests')
+    .update({
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+      manager_notes: req.body?.reason?.trim() || delivery.manager_notes,
     })
     .eq('id', delivery.id)
     .select(DELIVERY_SELECT)

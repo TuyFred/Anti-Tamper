@@ -76,7 +76,6 @@ export default function DashboardHero({ profile, roleName, connected }) {
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight">
               {greeting}, {firstName}
             </h1>
-            <p className="text-sm sm:text-base text-slate-400 mt-2 max-w-xl leading-relaxed">{theme.tagline}</p>
           </div>
         </div>
 

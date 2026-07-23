@@ -58,11 +58,13 @@ export function RwandaAddressFields({ title, icon: Icon, value, onChange }) {
   const roadIsCustom = value.road && !roads.includes(value.road);
 
   return (
-    <div className="p-4 rounded-xl bg-surface/50 border border-border space-y-3">
-      <p className="text-sm font-semibold text-white flex items-center gap-2">
-        {Icon && <Icon className="w-4 h-4 text-primary-light" />}
-        {title}
-      </p>
+    <div className="p-3 rounded-xl bg-surface/50 border border-border space-y-2.5">
+      {title && title !== 'Address' && (
+        <p className="text-sm font-semibold text-white flex items-center gap-2">
+          {Icon && <Icon className="w-4 h-4 text-primary-light" />}
+          {title}
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <SelectField
           label="Province *"

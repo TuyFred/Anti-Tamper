@@ -242,7 +242,7 @@ export default function AdminPanel() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
           <StatCard icon={Users} label="Total users" value={allUsers.length} accent="primary" />
-          <StatCard icon={Clock} label="Pending" value={pendingUsers.length} sub="Approval required" accent={pendingUsers.length > 0 ? 'warning' : 'success'} />
+          <StatCard icon={Clock} label="Pending" value={pendingUsers.length} accent={pendingUsers.length > 0 ? 'warning' : 'success'} />
           <StatCard icon={UserCheck} label="Approved" value={approvedUsers.length} accent="success" />
         </div>
         <button
@@ -441,11 +441,11 @@ export default function AdminPanel() {
       </section>
 
       {/* Add User Modal */}
-      <Modal open={showAddUser} onClose={() => setShowAddUser(false)} title="Add new user" size="lg">
-        <form onSubmit={handleCreateUser} className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Modal open={showAddUser} onClose={() => setShowAddUser(false)} title="Add user" size="lg">
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Full name</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Full name</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -459,12 +459,12 @@ export default function AdminPanel() {
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="email"
-                  placeholder="user@company.com"
+                  placeholder="user@email.com"
                   value={addForm.email}
                   onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
                   className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-border text-white placeholder-slate-600 focus:border-primary focus:outline-none"
@@ -474,9 +474,9 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -491,7 +491,7 @@ export default function AdminPanel() {
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Role</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Role</label>
               <select
                 value={addForm.role_id}
                 onChange={(e) => setAddForm({ ...addForm, role_id: e.target.value })}
@@ -505,63 +505,54 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 p-3 bg-surface rounded-xl border border-border cursor-pointer">
+          <div className="flex flex-wrap gap-3">
+            <label className="flex items-center gap-2 px-3 py-2.5 bg-surface rounded-xl border border-border cursor-pointer text-sm text-white">
               <input
                 type="checkbox"
                 checked={addForm.is_approved}
                 onChange={(e) => setAddForm({ ...addForm, is_approved: e.target.checked })}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-primary/30"
+                className="w-4 h-4 rounded"
               />
-              <div>
-                <p className="text-sm text-white">Approve immediately</p>
-                <p className="text-xs text-slate-500">User can log in right away</p>
-              </div>
+              Approve now
             </label>
-            <label className="flex items-center gap-3 p-3 bg-surface rounded-xl border border-border cursor-pointer">
+            <label className={`flex items-center gap-2 px-3 py-2.5 bg-surface rounded-xl border border-border cursor-pointer text-sm text-white ${!addForm.is_approved ? 'opacity-40' : ''}`}>
               <input
                 type="checkbox"
                 checked={addForm.grant_device_access}
                 onChange={(e) => setAddForm({ ...addForm, grant_device_access: e.target.checked })}
                 disabled={!addForm.is_approved}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-primary/30 disabled:opacity-40"
+                className="w-4 h-4 rounded"
               />
-              <div>
-                <p className="text-sm text-white">Assign a device</p>
-                <p className="text-xs text-slate-500">Link this user to a delivery box</p>
-              </div>
+              Assign device
             </label>
-
             {addForm.grant_device_access && addForm.is_approved && (
-              <div className="space-y-3 pl-2 border-l-2 border-primary/30 ml-1">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Device</label>
-                  <select
-                    value={addForm.device_id}
-                    onChange={(e) => setAddForm({ ...addForm, device_id: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-surface rounded-xl border border-border text-white focus:border-primary focus:outline-none"
-                    required
-                  >
-                    {devices.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name} ({d.device_id})</option>
-                    ))}
-                  </select>
-                </div>
-                <label className="flex items-center gap-3 p-3 bg-primary/10 rounded-xl border border-primary/25 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={addForm.can_control}
-                    onChange={(e) => setAddForm({ ...addForm, can_control: e.target.checked })}
-                    className="w-4 h-4 rounded"
-                  />
-                  <div>
-                    <p className="text-sm text-white font-medium">Authorized to unlock</p>
-                    <p className="text-xs text-slate-400">Without this, opening the box triggers the reed-switch alarm</p>
-                  </div>
-                </label>
-              </div>
+              <label className="flex items-center gap-2 px-3 py-2.5 bg-primary/10 rounded-xl border border-primary/25 cursor-pointer text-sm text-white">
+                <input
+                  type="checkbox"
+                  checked={addForm.can_control}
+                  onChange={(e) => setAddForm({ ...addForm, can_control: e.target.checked })}
+                  className="w-4 h-4 rounded"
+                />
+                Can unlock
+              </label>
             )}
           </div>
+
+          {addForm.grant_device_access && addForm.is_approved && (
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Device</label>
+              <select
+                value={addForm.device_id}
+                onChange={(e) => setAddForm({ ...addForm, device_id: e.target.value })}
+                className="w-full px-4 py-2.5 bg-surface rounded-xl border border-border text-white focus:border-primary focus:outline-none"
+                required
+              >
+                {devices.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name} ({d.device_id})</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {addError && (
             <div className="p-3 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger">
@@ -569,7 +560,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-1">
             <button
               type="button"
               onClick={() => setShowAddUser(false)}
@@ -587,7 +578,7 @@ export default function AdminPanel() {
               ) : (
                 <>
                   <UserPlus className="w-4 h-4" />
-                  Create user
+                  Create
                 </>
               )}
             </button>
@@ -637,12 +628,9 @@ export default function AdminPanel() {
                 checked={editForm.is_approved}
                 onChange={(e) => setEditForm({ ...editForm, is_approved: e.target.checked })}
                 disabled={editUser.id === currentProfile?.id}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-primary/30"
+                className="w-4 h-4 rounded"
               />
-              <div>
-                <p className="text-sm text-white">Approved account</p>
-                <p className="text-xs text-slate-500">User can access the platform</p>
-              </div>
+              <span className="text-sm text-white">Approved</span>
             </label>
 
             <div className="flex gap-3 pt-2">
@@ -671,10 +659,6 @@ export default function AdminPanel() {
               <p className="text-sm text-white font-medium">{resetPasswordUser.full_name || resetPasswordUser.email}</p>
               <p className="text-xs text-slate-500 mt-0.5">{resetPasswordUser.email}</p>
             </div>
-
-            <p className="text-xs text-slate-400">
-              Set a new password for this user. They will use it on their next login.
-            </p>
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">New password</label>
@@ -748,10 +732,7 @@ export default function AdminPanel() {
           <div className="space-y-5">
             <div className="p-4 bg-danger/10 border border-danger/20 rounded-xl">
               <p className="text-sm text-white">
-                Are you sure you want to delete <strong>{deleteUser.full_name || deleteUser.email}</strong>?
-              </p>
-              <p className="text-xs text-slate-400 mt-2">
-                This action cannot be undone. The account and all associated data will be permanently removed.
+                Delete <strong>{deleteUser.full_name || deleteUser.email}</strong>?
               </p>
             </div>
             <div className="flex gap-3">

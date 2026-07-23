@@ -77,6 +77,10 @@ export const api = {
     apiFetch(`/api/deliveries/${id}/payment-proof`, { method: 'POST', body: JSON.stringify(payload) }, token),
   verifyPayment: (token, id) =>
     apiFetch(`/api/deliveries/${id}/verify-payment`, { method: 'POST' }, token),
+  rejectPayment: (token, id, payload) =>
+    apiFetch(`/api/deliveries/${id}/reject-payment`, { method: 'POST', body: JSON.stringify(payload || {}) }, token),
+  cancelDelivery: (token, id, payload) =>
+    apiFetch(`/api/deliveries/${id}/cancel`, { method: 'POST', body: JSON.stringify(payload || {}) }, token),
   assignRider: (token, id, payload) =>
     apiFetch(`/api/deliveries/${id}/assign-rider`, { method: 'POST', body: JSON.stringify(payload) }, token),
   startTransit: (token, id) =>

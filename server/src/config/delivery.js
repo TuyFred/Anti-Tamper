@@ -5,6 +5,11 @@ export const deliveryConfig = {
   minDistanceKm: parseFloat(process.env.DELIVERY_MIN_DISTANCE_KM || '1'),
   defaultDistanceKm: parseFloat(process.env.DELIVERY_DEFAULT_DISTANCE_KM || '5'),
   tokenExpiryHours: parseInt(process.env.UNLOCK_TOKEN_EXPIRY_HOURS || '48', 10),
+  /** Rwanda VAT (TVA) — 18% on transport */
+  vatRate: parseFloat(process.env.DELIVERY_VAT_RATE || '0.18'),
+  companyName: process.env.COMPANY_NAME || 'Smart Box Delivery Ltd',
+  companyTin: process.env.COMPANY_TIN || 'TIN — Rwanda',
+  companyAddress: process.env.COMPANY_ADDRESS || 'Kigali, Rwanda',
   payment: {
     momoNumber: process.env.MOMO_PAY_NUMBER || '+250 791 691 817',
     momoName: process.env.MOMO_PAY_NAME || 'Smart Box Delivery',

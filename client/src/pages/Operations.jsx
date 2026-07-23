@@ -1,12 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ClipboardList, CheckCircle2, UserCheck, Lock, Unlock, Truck,
-  Loader2, ArrowRight, Eye, Play,
+  Loader2, Eye, Play, XCircle, Ban,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import Badge from '../components/ui/Badge';
-import { deliveryStatusMeta, formatPrice } from '../lib/deliveryUtils';
+import PaymentProofModal from '../components/PaymentProofModal';
+import {
+  deliveryStatusMeta, formatPrice, formatDeliveryRef, formatDeliveryDate,
+  paymentMethodLabel,
+} from '../lib/deliveryUtils';
+
+const TABS = [
+  { id: 'payments', label: 'Payment proofs' },
+  { id: 'all', label: 'All deliveries' },
+];
+
+function AddressBlock({ label, address, accent }) {
+  return (
+    <div className="flex gap-2 min-w-0">
+      <span className={`shrink-0 w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
+        accent === 'a' ? 'bg-success/15 text-success' : 'bg-primary/15 text-primary-light'
+      }`}>{label}</span>
+      <p className="text-xs text-slate-300 leading-snug break-words">{address}</p>
+    </div>
+  );
+}
 
 export default function Operations() {
   const { token } = useAuth();
@@ -15,8 +35,10 @@ export default function Operations() {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState('payments');
   const [assignForms, setAssignForms] = useState({});
   const [actionId, setActionId] = useState(null);
+  const [proofView, setProofView] = useState(null);
 
   const load = async () => {
     try {
@@ -26,7 +48,7 @@ export default function Operations() {
         api.getDevices(token),
       ]);
       setDeliveries(list);
-      setRiders(users.filter((u) => u.role?.name === 'motor_rider'));
+      setRiders(users.filter((u) => u.role?.name === 'motor_rider' && u.is_approved));
       setDevices(devs);
     } catch (err) {
       setError(err.message);
@@ -39,8 +61,8 @@ export default function Operations() {
     if (token) load();
   }, [token]);
 
-  const runAction = async (fn) => {
-    setActionId('busy');
+  const runAction = async (fn, id) => {
+    setActionId(id || 'busy');
     setError('');
     try {
       await fn();
@@ -52,37 +74,28 @@ export default function Operations() {
     }
   };
 
-  const handleVerify = (id) => runAction(() => api.verifyPayment(token, id));
+  const pendingPayments = useMemo(
+    () => deliveries.filter((d) => d.status === 'payment_submitted'),
+    [deliveries],
+  );
 
-  const handleStartTransit = (id) => runAction(() => api.startTransit(token, id));
+  const list = tab === 'payments' ? pendingPayments : deliveries;
 
+  const handleVerify = (id) => runAction(() => api.verifyPayment(token, id), id);
+  const handleRejectPayment = (id) => runAction(() => api.rejectPayment(token, id), id);
+  const handleCancel = (id) => {
+    if (!window.confirm('Cancel this delivery?')) return;
+    runAction(() => api.cancelDelivery(token, id), id);
+  };
+  const handleStartTransit = (id) => runAction(() => api.startTransit(token, id), id);
   const handleAssign = (id) => {
     const form = assignForms[id];
     if (!form?.rider_id || !form?.device_id) {
-      setError('Select both rider and Smart Box');
+      setError('Select rider and box');
       return;
     }
-    return runAction(() => api.assignRider(token, id, form));
+    return runAction(() => api.assignRider(token, id, form), id);
   };
-
-  const handleLock = (id) => runAction(() => api.managerLockDelivery(token, id));
-  const handleUnlock = (id) => runAction(() => api.managerUnlockDelivery(token, id));
-
-  const STATUS_ORDER = {
-    payment_submitted: 0,
-    payment_verified: 1,
-    rider_assigned: 2,
-    in_transit: 3,
-    awaiting_payment: 4,
-    delivered: 5,
-    cancelled: 6,
-  };
-
-  const sortedDeliveries = [...deliveries].sort(
-    (a, b) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99),
-  );
-
-  const pendingPayments = sortedDeliveries.filter((d) => d.status === 'payment_submitted');
 
   if (loading) {
     return (
@@ -93,89 +106,130 @@ export default function Operations() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {error && (
-        <div className="p-4 bg-danger/10 border border-danger/25 rounded-xl text-sm text-danger">{error}</div>
+        <div className="p-3 bg-danger/10 border border-danger/25 rounded-xl text-sm text-danger">{error}</div>
       )}
 
-      <div className="glass-card rounded-xl p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h3 className="text-lg font-bold text-white flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-primary-light" />
-          Delivery operations
+          Operations
         </h3>
-        <p className="text-sm text-slate-400 mt-1">
-          Review requests → verify payment → assign rider → Smart Box locks automatically
-        </p>
+        {pendingPayments.length > 0 && (
+          <span className="text-sm text-warning font-medium">{pendingPayments.length} pending</span>
+        )}
       </div>
 
-      {pendingPayments.length > 0 && (
-        <div className="p-4 rounded-xl bg-warning/10 border border-warning/25 text-sm text-warning">
-          {pendingPayments.length} payment proof{pendingPayments.length > 1 ? 's' : ''} awaiting your verification
-        </div>
-      )}
+      <div className="flex gap-2">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              tab === t.id ? 'bg-primary text-white' : 'bg-surface border border-border text-slate-400'
+            }`}
+          >
+            {t.label}
+            {t.id === 'payments' && pendingPayments.length > 0 && (
+              <span className="ml-1.5 opacity-80">({pendingPayments.length})</span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      {deliveries.length === 0 ? (
-        <div className="glass-card rounded-xl p-12 text-center text-slate-500 text-sm">
-          No delivery requests yet.
+      {list.length === 0 ? (
+        <div className="glass-card rounded-xl p-10 text-center text-slate-500 text-sm">
+          {tab === 'payments' ? 'No payment proofs pending.' : 'No deliveries.'}
         </div>
       ) : (
-        <div className="space-y-4">
-          {sortedDeliveries.map((d) => {
+        <div className="space-y-3">
+          {list.map((d) => {
             const meta = deliveryStatusMeta(d.status);
+            const isPending = d.status === 'payment_submitted';
+
             return (
-              <div key={d.id} className="glass-card rounded-xl p-5 space-y-4">
-                <div className="flex flex-wrap justify-between gap-3">
+              <div key={d.id} className="glass-card rounded-xl p-4 sm:p-5 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="text-white font-medium">
-                      {d.customer?.full_name || d.customer?.email}
-                    </p>
-                    <p className="text-sm text-slate-400 flex items-center gap-2 mt-1">
-                      {d.pickup_address}
-                      <ArrowRight className="w-3.5 h-3.5" />
-                      {d.delivery_address}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {formatPrice(d.calculated_price, d.currency)} · {d.distance_km} km
-                    </p>
+                    <p className="text-xs font-mono text-slate-500">{formatDeliveryRef(d.id)} · {formatDeliveryDate(d.created_at)}</p>
+                    <p className="text-sm font-medium text-white mt-0.5">{d.customer?.full_name || d.customer?.email}</p>
                   </div>
                   <Badge variant={meta.variant}>{meta.label}</Badge>
                 </div>
 
-                {d.payment_proof_url && (
-                  <div className="p-3 rounded-xl bg-surface border border-border">
-                    <p className="text-xs text-slate-400 mb-2 flex items-center gap-1">
-                      <Eye className="w-3.5 h-3.5" /> Payment proof
-                    </p>
-                    {d.payment_proof_url.startsWith('data:image') ? (
-                      <img src={d.payment_proof_url} alt="Payment proof" className="max-h-40 rounded-lg border border-border" />
-                    ) : (
-                      <p className="text-sm text-white break-all">{d.payment_proof_url}</p>
+                <div className="space-y-2 p-3 rounded-xl bg-surface/60 border border-border">
+                  <AddressBlock label="A" address={d.pickup_address} accent="a" />
+                  <AddressBlock label="B" address={d.delivery_address} accent="b" />
+                </div>
+
+                <p className="text-xs text-slate-500">
+                  {formatPrice(d.calculated_price, d.currency)} · {d.distance_km} km
+                  {d.payment_method && ` · ${paymentMethodLabel(d.payment_method)}`}
+                </p>
+
+                {isPending && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {d.payment_proof_url && (
+                      <button
+                        type="button"
+                        onClick={() => setProofView({ url: d.payment_proof_url, ref: formatDeliveryRef(d.id) })}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface border border-border text-sm text-white hover:bg-surface-lighter transition"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View proof
+                      </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => handleVerify(d.id)}
+                      disabled={!!actionId}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-success/15 text-success border border-success/25 text-sm font-semibold disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectPayment(d.id)}
+                      disabled={!!actionId}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-warning/10 text-warning border border-warning/25 text-sm font-medium disabled:opacity-50"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(d.id)}
+                      disabled={!!actionId}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-danger/10 text-danger border border-danger/25 text-sm font-medium disabled:opacity-50"
+                    >
+                      <Ban className="w-4 h-4" />
+                      Cancel
+                    </button>
                   </div>
                 )}
 
-                {d.status === 'payment_submitted' && (
+                {tab === 'all' && !['delivered', 'cancelled'].includes(d.status) && !isPending && (
                   <button
                     type="button"
-                    onClick={() => handleVerify(d.id)}
-                    disabled={actionId}
-                    className="flex items-center gap-2 px-4 py-2 bg-success/15 text-success border border-success/25 rounded-lg text-sm font-medium"
+                    onClick={() => handleCancel(d.id)}
+                    disabled={!!actionId}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-danger border border-danger/20 hover:bg-danger/10 transition disabled:opacity-50"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Confirm payment
+                    <Ban className="w-3.5 h-3.5" />
+                    Cancel delivery
                   </button>
                 )}
 
-                {['payment_verified', 'rider_assigned'].includes(d.status) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-surface border border-border">
+                {['payment_verified', 'rider_assigned'].includes(d.status) && tab === 'all' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-surface border border-border">
                     <div>
-                      <label className="text-xs text-slate-400 block mb-1">Assign motor rider</label>
+                      <label className="text-xs text-slate-500 block mb-1">Rider</label>
                       <select
                         value={assignForms[d.id]?.rider_id || d.rider_id || ''}
-                        onChange={(e) => setAssignForms({
-                          ...assignForms,
-                          [d.id]: { ...assignForms[d.id], rider_id: e.target.value },
-                        })}
+                        onChange={(e) => setAssignForms({ ...assignForms, [d.id]: { ...assignForms[d.id], rider_id: e.target.value } })}
                         className="w-full px-3 py-2 bg-surface rounded-lg border border-border text-white text-sm"
                       >
                         <option value="">Select rider</option>
@@ -185,13 +239,10 @@ export default function Operations() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-slate-400 block mb-1">Smart Box</label>
+                      <label className="text-xs text-slate-500 block mb-1">Smart Box</label>
                       <select
                         value={assignForms[d.id]?.device_id || d.device_id || ''}
-                        onChange={(e) => setAssignForms({
-                          ...assignForms,
-                          [d.id]: { ...assignForms[d.id], device_id: e.target.value },
-                        })}
+                        onChange={(e) => setAssignForms({ ...assignForms, [d.id]: { ...assignForms[d.id], device_id: e.target.value } })}
                         className="w-full px-3 py-2 bg-surface rounded-lg border border-border text-white text-sm"
                       >
                         <option value="">Select box</option>
@@ -203,57 +254,43 @@ export default function Operations() {
                     <button
                       type="button"
                       onClick={() => handleAssign(d.id)}
-                      disabled={actionId}
-                      className="sm:col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold"
+                      disabled={!!actionId}
+                      className="sm:col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50"
                     >
                       <UserCheck className="w-4 h-4" />
-                      Assign rider & lock box · generate customer token
+                      Assign & token
                     </button>
                   </div>
                 )}
 
-                {d.rider && (
+                {d.rider && tab === 'all' && (
                   <p className="text-xs text-slate-400 flex items-center gap-1 flex-wrap">
                     <Truck className="w-3.5 h-3.5" />
-                    Rider: <span className="text-white">{d.rider.full_name || d.rider.email}</span>
-                    {d.unlock_token && (
-                      <span className="ml-2 font-mono text-primary-light">Token: {d.unlock_token}</span>
-                    )}
+                    {d.rider.full_name || d.rider.email}
+                    {d.device && ` · Box ${d.device.device_id}`}
                   </p>
                 )}
 
-                {d.status === 'rider_assigned' && (
+                {d.status === 'rider_assigned' && tab === 'all' && (
                   <button
                     type="button"
                     onClick={() => handleStartTransit(d.id)}
-                    disabled={actionId}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary/15 text-primary-light border border-primary/25 rounded-lg text-sm font-medium"
+                    disabled={!!actionId}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-primary/15 text-primary-light border border-primary/25 rounded-lg text-sm font-medium disabled:opacity-50"
                   >
                     <Play className="w-4 h-4" />
-                    Mark as in transit
+                    Start transit
                   </button>
                 )}
 
-                {d.device && (
+                {d.device && tab === 'all' && ['rider_assigned', 'in_transit'].includes(d.status) && (
                   <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-                    <span className="text-xs text-slate-500 self-center">
-                      Box {d.device.device_id} — {d.device.lock_status}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleUnlock(d.id)}
-                      disabled={actionId}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-success/10 text-success border border-success/25 rounded-lg text-xs"
-                    >
-                      <Unlock className="w-3.5 h-3.5" /> Remote unlock
+                    <span className="text-xs text-slate-500 self-center">{d.device.lock_status}</span>
+                    <button type="button" onClick={() => runAction(() => api.managerUnlockDelivery(token, d.id), d.id)} disabled={!!actionId} className="px-2 py-1 text-xs text-success border border-success/25 rounded-lg">
+                      <Unlock className="w-3 h-3 inline" /> Unlock
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLock(d.id)}
-                      disabled={actionId}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary-light border border-primary/25 rounded-lg text-xs"
-                    >
-                      <Lock className="w-3.5 h-3.5" /> Remote lock
+                    <button type="button" onClick={() => runAction(() => api.managerLockDelivery(token, d.id), d.id)} disabled={!!actionId} className="px-2 py-1 text-xs text-primary-light border border-primary/25 rounded-lg">
+                      <Lock className="w-3 h-3 inline" /> Lock
                     </button>
                   </div>
                 )}
@@ -262,6 +299,13 @@ export default function Operations() {
           })}
         </div>
       )}
+
+      <PaymentProofModal
+        open={!!proofView}
+        onClose={() => setProofView(null)}
+        proofUrl={proofView?.url}
+        title={proofView ? `Proof · ${proofView.ref}` : 'Payment proof'}
+      />
     </div>
   );
 }

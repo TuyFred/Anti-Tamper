@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  Shield, Package, MapPin, Lock, Star, ChevronRight, Menu, X,
+  Shield, Package, MapPin, Lock, Star, ChevronRight, Menu,
   Smartphone, Building2, Truck, Key, CheckCircle2, MessageCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -13,6 +13,7 @@ import SoundOnVideo from '../components/SoundOnVideo';
 import WhatsAppButton from '../components/WhatsAppButton';
 import { whatsappUrl, WHATSAPP_DISPLAY } from '../lib/whatsapp';
 import { NavIcon } from '../components/dashboard/DashboardPanel';
+import MobileNavDrawer, { MobileNavSection, MobileNavLink } from '../components/MobileNavDrawer';
 
 const STEPS = [
   {
@@ -75,11 +76,6 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = menuOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [menuOpen]);
-
-  useEffect(() => {
     const km = parseFloat(distance);
     if (!km || km < 1) return;
     api.estimateDeliveryPublic({ distance_km: km }).then(setEstimate).catch(() => {});
@@ -92,25 +88,25 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-surface text-slate-100">
-      {/* Navbar */}
-      <header className="fixed top-0 inset-x-0 z-50 border-b border-border/60 bg-surface/90 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 min-w-0">
+      {/* Top bar */}
+      <header className="fixed top-0 inset-x-0 z-[80] border-b border-border/60 bg-surface/95 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <Link to="/" className="flex items-center gap-2.5 min-w-0 flex-1">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
               <Shield className="w-5 h-5 text-white" />
             </div>
             <span className="font-bold text-white text-sm sm:text-base truncate">Smart Box Delivery</span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm text-slate-400">
-            <a href="#rider-video" className="hover:text-white transition">Our riders</a>
-            <a href="#how-it-works" className="hover:text-white transition">How it works</a>
-            <a href="#pricing" className="hover:text-white transition">Pricing</a>
-            <a href="#features" className="hover:text-white transition">Features</a>
-            <a href="#roles" className="hover:text-white transition">Roles</a>
+          <nav className="hidden md:flex items-center gap-6 lg:gap-8 text-sm text-slate-400">
+            <a href="#rider-video" className="hover:text-white transition whitespace-nowrap">Our riders</a>
+            <a href="#how-it-works" className="hover:text-white transition whitespace-nowrap">How it works</a>
+            <a href="#pricing" className="hover:text-white transition whitespace-nowrap">Pricing</a>
+            <a href="#features" className="hover:text-white transition whitespace-nowrap">Features</a>
+            <a href="#roles" className="hover:text-white transition whitespace-nowrap">Roles</a>
           </nav>
 
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-3 shrink-0">
             {session ? (
               <div className="flex items-center gap-2">
                 <Link
@@ -144,124 +140,78 @@ export default function HomePage() {
           <button
             type="button"
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            className="md:hidden p-2.5 rounded-xl bg-surface-lighter border border-border text-white hover:bg-surface-light transition"
-            onClick={() => setMenuOpen(!menuOpen)}
+            aria-expanded={menuOpen}
+            className="md:hidden p-2.5 rounded-xl bg-surface-lighter border border-border text-white hover:bg-surface-light transition shrink-0 touch-manipulation"
+            onClick={() => setMenuOpen((v) => !v)}
           >
-            {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            <Menu className="w-6 h-6" />
           </button>
         </div>
-
-        {menuOpen && (
-          <>
-            <button
-              type="button"
-              aria-label="Close menu overlay"
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 md:hidden"
-              onClick={() => setMenuOpen(false)}
-            />
-            <div className="fixed inset-y-0 right-0 z-50 w-[min(340px,92vw)] flex flex-col bg-surface-light border-l border-border shadow-2xl animate-slide-in-right md:hidden">
-              <div className="flex items-center justify-between p-5 border-b border-border pt-[max(1.25rem,env(safe-area-inset-top))]">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                    <Shield className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="font-bold text-white text-base">Menu</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMenuOpen(false)}
-                  className="p-2.5 rounded-xl bg-surface-lighter border border-border text-slate-300"
-                  aria-label="Close menu"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <nav className="flex-1 overflow-y-auto p-4 space-y-6">
-                <div>
-                  <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Explore</p>
-                  <div className="space-y-1">
-                    {HOME_NAV_LINKS.map((item) => (
-                      <a
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-base font-medium text-slate-200 hover:text-white hover:bg-surface-lighter border border-transparent hover:border-border transition"
-                      >
-                        <NavIcon name={item.icon} className="w-5 h-5 text-primary-light shrink-0" />
-                        <div className="flex-1 min-w-0 text-left">
-                          <span className="block">{item.label}</span>
-                          {item.desc && <span className="block text-xs text-slate-500 font-normal mt-0.5">{item.desc}</span>}
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-slate-500 shrink-0" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Account</p>
-                  <div className="space-y-1">
-                    {appLinks.map((item) => (
-                      <Link
-                        key={item.to + item.label}
-                        to={item.to}
-                        onClick={() => setMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-base font-medium text-slate-200 hover:text-white hover:bg-surface-lighter border border-transparent hover:border-border transition"
-                      >
-                        <NavIcon name={item.icon} className="w-5 h-5 text-primary-light shrink-0" />
-                        <div className="flex-1 min-w-0 text-left">
-                          <span className="block">{item.label}</span>
-                          {item.desc && <span className="block text-xs text-slate-500 font-normal mt-0.5">{item.desc}</span>}
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-slate-500 shrink-0" />
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Support</p>
-                  <a
-                    href={waHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-base font-medium text-[#25D366] hover:bg-[#25D366]/10 border border-[#25D366]/20 transition"
-                  >
-                    <MessageCircle className="w-5 h-5 shrink-0" />
-                    <div className="flex-1 min-w-0 text-left">
-                      <span className="block">WhatsApp Business</span>
-                      <span className="block text-xs text-[#25D366]/70 font-normal mt-0.5">Ask about docs & delivery</span>
-                    </div>
-                    <ChevronRight className="w-5 h-5 opacity-50 shrink-0" />
-                  </a>
-                </div>
-              </nav>
-
-              <div className="p-4 border-t border-border pb-[max(1rem,env(safe-area-inset-bottom))]">
-                {session ? (
-                  <Link
-                    to={appLink}
-                    onClick={() => setMenuOpen(false)}
-                    className="block w-full text-center px-4 py-3.5 bg-primary text-white text-base font-semibold rounded-xl shadow-lg shadow-primary/25"
-                  >
-                    Open Dashboard
-                  </Link>
-                ) : (
-                  <Link
-                    to="/login?register=1"
-                    onClick={() => setMenuOpen(false)}
-                    className="block w-full text-center px-4 py-3.5 bg-primary text-white text-base font-semibold rounded-xl shadow-lg shadow-primary/25"
-                  >
-                    Get started free
-                  </Link>
-                )}
-              </div>
-            </div>
-          </>
-        )}
       </header>
+
+      <MobileNavDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        side="right"
+        title="Smart Box Delivery"
+        subtitle="Explore & account"
+        footer={session ? (
+          <Link
+            to={appLink}
+            onClick={() => setMenuOpen(false)}
+            className="block w-full text-center px-4 py-3.5 bg-primary text-white text-base font-semibold rounded-xl shadow-lg shadow-primary/25 touch-manipulation"
+          >
+            Open Dashboard
+          </Link>
+        ) : (
+          <Link
+            to="/login?register=1"
+            onClick={() => setMenuOpen(false)}
+            className="block w-full text-center px-4 py-3.5 bg-primary text-white text-base font-semibold rounded-xl shadow-lg shadow-primary/25 touch-manipulation"
+          >
+            Get started free
+          </Link>
+        )}
+      >
+        <div className="p-4 space-y-5">
+          <MobileNavSection title="Explore">
+            {HOME_NAV_LINKS.map((item) => (
+              <MobileNavLink
+                key={item.href}
+                href={item.href}
+                onClick={() => setMenuOpen(false)}
+                iconNode={<NavIcon name={item.icon} className="w-5 h-5 text-primary-light shrink-0" />}
+                label={item.label}
+                trailing={<ChevronRight className="w-5 h-5 text-slate-600 shrink-0" />}
+              />
+            ))}
+          </MobileNavSection>
+
+          <MobileNavSection title={session ? 'Your account' : 'Account'}>
+            {appLinks.map((item) => (
+              <MobileNavLink
+                key={item.to + item.label}
+                to={item.to}
+                onClick={() => setMenuOpen(false)}
+                iconNode={<NavIcon name={item.icon} className="w-5 h-5 text-primary-light shrink-0" />}
+                label={item.label}
+                trailing={<ChevronRight className="w-5 h-5 text-slate-600 shrink-0" />}
+              />
+            ))}
+          </MobileNavSection>
+
+          <MobileNavSection title="Support">
+            <MobileNavLink
+              href={waHref}
+              onClick={() => setMenuOpen(false)}
+              icon={MessageCircle}
+              label="WhatsApp"
+              accent
+              trailing={<ChevronRight className="w-5 h-5 opacity-50 shrink-0" />}
+            />
+          </MobileNavSection>
+        </div>
+      </MobileNavDrawer>
 
       {/* Hero */}
       <section className="relative pt-24 sm:pt-28 pb-16 sm:pb-20 px-4 sm:px-6 overflow-hidden">
@@ -545,7 +495,7 @@ export default function HomePage() {
         </div>
       </footer>
 
-      <WhatsAppButton />
+      <WhatsAppButton className={menuOpen ? 'hidden' : ''} />
     </div>
   );
 }

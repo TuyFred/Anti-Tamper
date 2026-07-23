@@ -49,71 +49,41 @@ export default function ManagerDashboard() {
   }
 
   const actions = [
-    paymentReview > 0 && {
-      label: 'Verify payments',
-      detail: `${paymentReview} proof${paymentReview > 1 ? 's' : ''} waiting`,
-      to: '/operations',
-      icon: CreditCard,
-      accent: 'border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning',
-    },
-    pendingUsers > 0 && {
-      label: 'Approve users',
-      detail: `${pendingUsers} registration${pendingUsers > 1 ? 's' : ''} pending`,
-      to: '/admin',
-      icon: Users,
-      accent: 'border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary-light',
-    },
-    criticalAlerts > 0 && {
-      label: 'Critical alerts',
-      detail: `${criticalAlerts} need attention`,
-      to: '/alerts',
-      icon: AlertTriangle,
-      accent: 'border-danger/30 bg-danger/5 hover:bg-danger/10 text-danger',
-    },
+    paymentReview > 0 && { label: 'Payments', count: paymentReview, to: '/operations', icon: CreditCard, accent: 'border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning' },
+    pendingUsers > 0 && { label: 'Users', count: pendingUsers, to: '/admin', icon: Users, accent: 'border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary-light' },
+    criticalAlerts > 0 && { label: 'Alerts', count: criticalAlerts, to: '/alerts', icon: AlertTriangle, accent: 'border-danger/30 bg-danger/5 hover:bg-danger/10 text-danger' },
   ].filter(Boolean);
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 sm:gap-4">
-        <StatCard icon={Users} label="Pending users" value={pendingUsers} sub="Need approval" accent={pendingUsers ? 'warning' : 'success'} />
-        <StatCard icon={CreditCard} label="Payments to verify" value={paymentReview} sub="Customer proofs" accent={paymentReview ? 'warning' : 'success'} />
-        <StatCard icon={Truck} label="Active deliveries" value={activeOps} sub="In pipeline" accent="primary" />
-        <StatCard icon={Package} label="Total orders" value={deliveries.length} sub="All statuses" accent="neutral" />
-        <StatCard icon={AlertTriangle} label="Critical alerts" value={criticalAlerts} sub="Unacknowledged" accent={criticalAlerts ? 'danger' : 'success'} />
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+        <StatCard icon={Users} label="Users" value={pendingUsers} accent={pendingUsers ? 'warning' : 'success'} />
+        <StatCard icon={CreditCard} label="Proofs" value={paymentReview} accent={paymentReview ? 'warning' : 'success'} />
+        <StatCard icon={Truck} label="Active" value={activeOps} accent="primary" />
+        <StatCard icon={Package} label="Orders" value={deliveries.length} accent="neutral" />
+        <StatCard icon={AlertTriangle} label="Alerts" value={criticalAlerts} accent={criticalAlerts ? 'danger' : 'success'} />
       </div>
 
-      <DashboardPanel
-        title="Action center"
-        subtitle={actions.length ? 'Items requiring your attention' : 'Everything is up to date'}
-      >
+      <DashboardPanel title="Actions">
         {actions.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {actions.map((a) => {
               const Icon = a.icon;
               return (
-                <Link
-                  key={a.to}
-                  to={a.to}
-                  className={`flex items-start gap-3 p-4 rounded-xl border transition ${a.accent}`}
-                >
-                  <div className="p-2 rounded-lg bg-surface/80 border border-border shrink-0">
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">{a.label}</p>
-                    <p className="text-xs opacity-80 mt-0.5">{a.detail}</p>
-                  </div>
-                  <ArrowRight className="w-4 h-4 opacity-50 shrink-0 mt-1" />
+                <Link key={a.to} to={a.to} className={`flex items-center gap-3 p-4 rounded-xl border transition ${a.accent}`}>
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className="font-semibold text-sm flex-1">{a.label}</span>
+                  <span className="text-lg font-bold tabular-nums">{a.count}</span>
+                  <ArrowRight className="w-4 h-4 opacity-40" />
                 </Link>
               );
             })}
           </div>
         ) : (
-          <DashboardEmptyState icon={CheckCircle2} title="All clear">
-            Operations, users, and alerts are under control. Use the menu to manage the fleet.
-          </DashboardEmptyState>
+          <DashboardEmptyState icon={CheckCircle2} title="All clear" />
         )}
       </DashboardPanel>
     </div>
   );
 }
+

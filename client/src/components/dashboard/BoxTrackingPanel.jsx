@@ -128,13 +128,7 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
         <div className="w-14 h-14 rounded-2xl bg-surface-lighter flex items-center justify-center mx-auto mb-4">
           <Package className="w-7 h-7 text-slate-500" />
         </div>
-        <h3 className="text-base font-semibold text-white mb-2">No Smart Box to track yet</h3>
-        <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
-          {isCustomer && 'Once a manager assigns a box to your delivery, it will appear here with live GPS.'}
-          {isRider && 'When a delivery is assigned to you with a Smart Box, tracking starts here.'}
-          {isManager && 'Assign a Smart Box to a delivery in Operations to see it on the map.'}
-          {!isCustomer && !isRider && !isManager && 'No delivery boxes are linked to your account yet.'}
-        </p>
+        <h3 className="text-base font-semibold text-white mb-4">No boxes</h3>
         <div className="flex flex-wrap justify-center gap-3">
           {isCustomer && (
             <Link to="/deliveries" className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-medium">
@@ -180,10 +174,10 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
       )}
       {!compact && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Package} label="Smart Boxes" value={devices.length} sub={`${onlineCount} online`} accent="primary" />
-          <StatCard icon={Wifi} label="Connection" value={connected ? 'Live' : 'Off'} sub="Real-time tracking" accent={connected ? 'success' : 'neutral'} />
-          <StatCard icon={Bell} label="Critical alerts" value={criticalAlerts} sub="Unacknowledged" accent={criticalAlerts > 0 ? 'danger' : 'success'} />
-          <StatCard icon={AlertTriangle} label="Security" value={tamperActive ? 'ALERT' : 'OK'} sub="Tamper & shock" accent={tamperActive ? 'danger' : 'success'} />
+          <StatCard icon={Package} label="Boxes" value={devices.length} accent="primary" />
+          <StatCard icon={Wifi} label="Live" value={connected ? 'Yes' : 'No'} accent={connected ? 'success' : 'neutral'} />
+          <StatCard icon={Bell} label="Alerts" value={criticalAlerts} accent={criticalAlerts > 0 ? 'danger' : 'success'} />
+          <StatCard icon={AlertTriangle} label="Tamper" value={tamperActive ? '!' : 'OK'} accent={tamperActive ? 'danger' : 'success'} />
         </div>
       )}
 
