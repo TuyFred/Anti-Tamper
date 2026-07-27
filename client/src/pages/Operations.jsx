@@ -103,6 +103,12 @@ export default function Operations() {
     }, id);
   };
 
+  const handleSendToken = (id) => runAction(async () => {
+    const result = await api.sendDeliveryToken(token, id);
+    if (result?.message) setSuccess(result.message);
+    return result;
+  }, id);
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -321,8 +327,19 @@ export default function Operations() {
                           </p>
                         )}
                         <p className="text-[10px] text-slate-500">
-                          Visible on customer Dashboard and Deliveries only — not shared with the rider.
+                          Customer opens at delivery B once, then closes — code expires (one-time use).
                         </p>
+                        {!d.token_closed_at && (
+                          <button
+                            type="button"
+                            onClick={() => handleSendToken(d.id)}
+                            disabled={!!actionId || !d.device_id}
+                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/10 border border-warning/25 text-xs font-medium text-warning hover:bg-warning/15 disabled:opacity-50"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            {d.customer_token_sent ? 'Resend unlock code' : 'Send unlock code'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

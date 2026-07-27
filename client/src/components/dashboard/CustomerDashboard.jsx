@@ -45,7 +45,7 @@ export default function CustomerDashboard() {
     ['in_transit', 'rider_assigned', 'payment_verified', 'awaiting_payment', 'payment_submitted'].includes(d.status)
   );
   const tokenDelivery = deliveries.find((d) =>
-    ['in_transit', 'rider_assigned'].includes(d.status) && d.unlock_token && !d.token_used_at
+    ['in_transit', 'rider_assigned'].includes(d.status) && d.unlock_token && !d.token_closed_at
   );
   const companyName = config?.company?.name || 'Anti-Tamper Smart Delivery';
 

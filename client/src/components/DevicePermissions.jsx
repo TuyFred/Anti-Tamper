@@ -115,7 +115,8 @@ export default function DevicePermissions({ token, users = [], devices = [], onU
       <div className="px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Package className="w-5 h-5 text-primary-light" />
-          <h3 className="font-semibold text-white">Box permissions</h3>
+          <h3 className="font-semibold text-white">Box permissions (Admin)</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Grant customers view or direct open access. Delivery unlock codes are sent by managers separately.</p>
         </div>
         <button
           type="button"
@@ -225,8 +226,8 @@ export default function DevicePermissions({ token, users = [], devices = [], onU
               onChange={(e) => setGrantForm({ ...grantForm, access_level: e.target.value })}
               className={inputCls}
             >
-              <option value="view">View only</option>
-              <option value="unlock">Can unlock</option>
+              <option value="view">View only (track on map)</option>
+              <option value="unlock">Can open Smart Box (admin grant)</option>
             </select>
           </div>
 

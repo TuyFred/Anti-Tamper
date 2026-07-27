@@ -89,6 +89,8 @@ export function getDeliveryTimeline(delivery) {
     { key: 'proof', label: 'Proof sent', at: delivery.payment_submitted_at },
     { key: 'paid', label: 'Paid', at: delivery.payment_verified_at },
     { key: 'token', label: 'Unlock code sent', at: delivery.token_sent_at || (delivery.unlock_token ? delivery.updated_at : null) },
+    { key: 'opened', label: 'Box opened', at: delivery.token_used_at },
+    { key: 'closed', label: 'Box closed (code used)', at: delivery.token_closed_at },
     { key: 'delivered', label: 'Delivered', at: delivery.delivered_at },
   ];
   return items.filter((i) => i.at);

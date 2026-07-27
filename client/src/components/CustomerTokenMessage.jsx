@@ -42,6 +42,7 @@ export default function CustomerTokenMessage({
   const isExpired = delivery.token_expires_at
     && new Date(delivery.token_expires_at) < new Date();
   const isUsed = Boolean(delivery.token_used_at);
+  const isClosed = Boolean(delivery.token_closed_at) || (!delivery.unlock_token && isUsed);
   const recipient = customerName || customerEmail || 'You';
 
   const copy = async (text, setter) => {
@@ -107,12 +108,22 @@ export default function CustomerTokenMessage({
               Box {delivery.device.device_id}
             </span>
           )}
-          {isUsed && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success/10 text-success font-medium">
-              <CheckCircle2 className="w-3 h-3" /> Used
+          {isClosed && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-500/20 text-slate-300 font-medium">
+              <CheckCircle2 className="w-3 h-3" /> Code used (one-time)
             </span>
           )}
-          {isExpired && !isUsed && (
+          {isUsed && !isClosed && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning/10 text-warning font-medium">
+              Box opened — close when done
+            </span>
+          )}
+          {!isUsed && !isExpired && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 text-primary-light font-medium">
+              Ready to use
+            </span>
+          )}
+          {isExpired && !isUsed && !isClosed && (
             <span className="px-2 py-0.5 rounded-md bg-danger/10 text-danger font-medium">Expired</span>
           )}
         </div>
@@ -172,8 +183,8 @@ export default function CustomerTokenMessage({
 
         {!compact && (
           <p className="text-[11px] text-slate-500 leading-relaxed text-center px-2">
-            When your rider arrives at delivery B, enter this code to unlock the Smart Box and collect your items.
-            This message is for you only — do not share your code.
+            At delivery location B, enter this code to open the Smart Box once.
+            When you finish, tap <strong className="text-slate-400">Close Smart Box</strong> — the code expires and cannot be reused.
           </p>
         )}
       </div>

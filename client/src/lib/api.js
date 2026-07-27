@@ -83,6 +83,8 @@ export const api = {
     apiFetch(`/api/deliveries/${id}/cancel`, { method: 'POST', body: JSON.stringify(payload || {}) }, token),
   assignRider: (token, id, payload) =>
     apiFetch(`/api/deliveries/${id}/assign-rider`, { method: 'POST', body: JSON.stringify(payload) }, token),
+  sendDeliveryToken: (token, id) =>
+    apiFetch(`/api/deliveries/${id}/send-token`, { method: 'POST' }, token),
   startTransit: (token, id) =>
     apiFetch(`/api/deliveries/${id}/start-transit`, { method: 'POST' }, token),
   unlockWithToken: (token, id, tokenCode) =>

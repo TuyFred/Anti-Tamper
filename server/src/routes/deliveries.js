@@ -74,6 +74,23 @@ async function unlockDevice(deviceRow, userId) {
     .eq('id', deviceRow.id);
 }
 
+/** Customer can track assigned box on the map (view only — open uses delivery token). */
+async function grantCustomerDeviceView(customerId, deviceId, grantedBy) {
+  if (!customerId || !deviceId) return;
+  await supabase.from('device_access').upsert({
+    user_id: customerId,
+    device_id: deviceId,
+    can_view: true,
+    can_control: false,
+    granted_by: grantedBy,
+    granted_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,device_id' });
+}
+
+function isTokenConsumed(delivery) {
+  return Boolean(delivery.token_closed_at) || !delivery.unlock_token;
+}
+
 router.get('/public/config', (_req, res) => {
   res.json({
     currency: deliveryConfig.currency,
@@ -366,6 +383,8 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
 
   await lockDevice(device);
 
+  await grantCustomerDeviceView(delivery.customer_id, device_id, req.user.id);
+
   const { data, error } = await supabase
     .from('delivery_requests')
     .update({
@@ -376,6 +395,7 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
       token_expires_at: expires.toISOString(),
       token_sent_at: new Date().toISOString(),
       token_used_at: null,
+      token_closed_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', delivery.id)
@@ -394,7 +414,55 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
   });
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Rider assigned to route. Unlock code sent to customer inbox.',
+    message: 'Rider assigned. Unlock code sent to customer inbox (one-time use at delivery B).',
+  });
+});
+
+/** Manager: resend / regenerate unlock token (only if not yet consumed). */
+router.post('/:id/send-token', authenticate, requireApproved, requireManager, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+  if (!['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status)) {
+    return res.status(400).json({ error: 'Token can only be sent after payment is verified' });
+  }
+  if (delivery.token_closed_at) {
+    return res.status(400).json({ error: 'Token already used — customer closed the box' });
+  }
+  if (!delivery.device_id) {
+    return res.status(400).json({ error: 'Assign a Smart Box before sending token' });
+  }
+
+  const token = generateUnlockToken();
+  const expires = new Date();
+  expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
+
+  const { data, error } = await supabase
+    .from('delivery_requests')
+    .update({
+      unlock_token: token,
+      token_expires_at: expires.toISOString(),
+      token_sent_at: new Date().toISOString(),
+      token_used_at: null,
+      token_closed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', delivery.id)
+    .select(DELIVERY_SELECT)
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  await logActivity({
+    entityType: 'delivery',
+    entityId: data.id,
+    action: 'token_sent',
+    actorId: req.user.id,
+    summary: 'Unlock token sent to customer',
+  });
+
+  res.json({
+    ...sanitizeDelivery(data, req.profile, req.user.id),
+    message: 'Unlock code sent to customer inbox.',
   });
 });
 
@@ -433,14 +501,17 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
   if (!['rider_assigned', 'in_transit'].includes(delivery.status)) {
     return res.status(400).json({ error: 'Box is not ready for customer pickup' });
   }
+  if (isTokenConsumed(delivery)) {
+    return res.status(400).json({ error: 'Unlock code already used — contact manager for help' });
+  }
   if (!token || token.trim().toUpperCase() !== delivery.unlock_token?.toUpperCase()) {
-    return res.status(403).json({ error: 'Invalid unlock token' });
+    return res.status(403).json({ error: 'Invalid unlock code' });
   }
   if (delivery.token_used_at) {
-    return res.status(400).json({ error: 'Token already used' });
+    return res.status(400).json({ error: 'Box already opened — close it to finish. Code cannot open twice.' });
   }
   if (delivery.token_expires_at && new Date(delivery.token_expires_at) < new Date()) {
-    return res.status(400).json({ error: 'Unlock token expired — contact manager' });
+    return res.status(400).json({ error: 'Unlock code expired — ask manager to send a new one' });
   }
   if (!delivery.device) {
     return res.status(400).json({ error: 'No Smart Box assigned to this delivery' });
@@ -468,7 +539,7 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
   });
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Smart Box unlocked — retrieve your items within 60 seconds',
+    message: 'Smart Box opened — retrieve your items, then tap Close Smart Box when done.',
   });
 });
 
@@ -477,10 +548,13 @@ router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res
   if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
 
   if (delivery.customer_id !== req.user.id && !isManager(req.profile)) {
-    return res.status(403).json({ error: 'Only the customer can lock this delivery box' });
+    return res.status(403).json({ error: 'Only the customer can close this delivery box' });
   }
   if (!delivery.token_used_at) {
-    return res.status(400).json({ error: 'Unlock with your token first' });
+    return res.status(400).json({ error: 'Open the Smart Box with your code first' });
+  }
+  if (delivery.token_closed_at || isTokenConsumed(delivery)) {
+    return res.status(400).json({ error: 'Unlock code already used — one-time only' });
   }
   if (!delivery.device) {
     return res.status(400).json({ error: 'No Smart Box assigned' });
@@ -488,17 +562,32 @@ router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res
 
   await lockDevice(delivery.device);
 
+  const closedAt = new Date().toISOString();
   const { data, error } = await supabase
     .from('delivery_requests')
-    .update({ updated_at: new Date().toISOString() })
+    .update({
+      token_closed_at: closedAt,
+      unlock_token: null,
+      token_expires_at: closedAt,
+      updated_at: closedAt,
+    })
     .eq('id', delivery.id)
     .select(DELIVERY_SELECT)
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  await logActivity({
+    entityType: 'delivery',
+    entityId: data.id,
+    action: 'token_consumed',
+    actorId: req.user.id,
+    summary: 'Customer closed box — unlock code expired (one-time use)',
+  });
+
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Smart Box locked',
+    message: 'Smart Box closed. Your unlock code is now used and cannot be reused.',
   });
 });
 
@@ -526,8 +615,8 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
   if (delivery.customer_id !== req.user.id) {
     return res.status(403).json({ error: 'Only the customer can confirm receipt' });
   }
-  if (!delivery.token_used_at) {
-    return res.status(400).json({ error: 'Unlock the Smart Box with your token first' });
+  if (!delivery.token_closed_at) {
+    return res.status(400).json({ error: 'Close the Smart Box first — your unlock code is used when you close' });
   }
   if (!['in_transit', 'rider_assigned'].includes(delivery.status)) {
     return res.status(400).json({ error: 'Delivery cannot be completed in current status' });

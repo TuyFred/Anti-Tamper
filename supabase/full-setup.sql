@@ -364,6 +364,7 @@ ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS delivery_latitude 
 ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS delivery_longitude DOUBLE PRECISION;
 ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS special_instructions TEXT;
 ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS token_sent_at TIMESTAMPTZ;
+ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS token_closed_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS public.promo_videos (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -527,6 +528,9 @@ END $$;
 
 COMMENT ON COLUMN public.delivery_requests.token_sent_at IS
   'When the unlock token message was sent to the customer dashboard/inbox';
+
+COMMENT ON COLUMN public.delivery_requests.token_closed_at IS
+  'When customer closed the box — unlock token consumed (one-time use)';
 
 UPDATE public.promo_videos
 SET

@@ -215,7 +215,7 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
 
       <div className={`grid grid-cols-1 ${compact ? 'xl:grid-cols-1' : 'xl:grid-cols-3'} gap-6`}>
         <div className={`${compact ? '' : 'xl:col-span-2'} glass-card rounded-xl p-1 overflow-hidden`}>
-          <div className={`p-1 ${compact ? 'h-[360px]' : 'h-[520px]'}`}>
+          <div className={`${compact ? 'h-[420px] min-h-[380px]' : 'h-[580px] min-h-[480px]'} p-0 overflow-hidden rounded-xl`}>
             <LiveMap devices={devices} selectedDevice={selectedDevice} gpsUpdates={gpsUpdates} />
           </div>
         </div>
