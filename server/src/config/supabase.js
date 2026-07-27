@@ -32,7 +32,7 @@ export const config = {
   clientUrl: getClientOrigins()[0],
   clientOrigins: getClientOrigins(),
   mqtt: {
-    brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883',
+    brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://test.mosquitto.org:1883',
     username: process.env.MQTT_USERNAME || undefined,
     password: process.env.MQTT_PASSWORD || undefined,
   },
