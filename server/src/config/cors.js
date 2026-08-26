@@ -1,8 +1,16 @@
 /**
- * CORS origins for Express + Socket.IO (Vercel client + optional extra URLs).
+ * CORS origins for Express + Socket.IO (local Vite + Vercel + optional extra URLs).
+ * Localhost is always allowed so hosted CLIENT_URL never blocks local dashboard.
  */
+const LOCAL_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4173',
+];
+
 export function getClientOrigins() {
-  const urls = [];
+  const urls = [...LOCAL_ORIGINS];
 
   if (process.env.CLIENT_URL?.trim()) {
     urls.push(process.env.CLIENT_URL.trim().replace(/\/$/, ''));
@@ -16,10 +24,6 @@ export function getClientOrigins() {
     );
   }
 
-  if (urls.length === 0) {
-    urls.push('http://localhost:5173');
-  }
-
   return [...new Set(urls)];
 }
 
@@ -31,7 +35,7 @@ function hostnameFromOrigin(origin) {
   }
 }
 
-/** Allow configured origins + any *.vercel.app preview/production URL. */
+/** Allow configured origins + localhost + any *.vercel.app preview/production URL. */
 export function isAllowedClientOrigin(origin) {
   if (!origin) return true;
 
@@ -41,15 +45,18 @@ export function isAllowedClientOrigin(origin) {
   if (origins.includes(normalized)) return true;
 
   const host = hostnameFromOrigin(origin);
+  if (host === 'localhost' || host === '127.0.0.1') return true;
   if (host.endsWith('.vercel.app')) return true;
 
   return false;
 }
 
 export function corsOriginCallback(origin, callback) {
+  // Use (null, false) — never Error — so preflight still gets a clean CORS response
   if (isAllowedClientOrigin(origin)) {
     callback(null, true);
   } else {
-    callback(new Error(`CORS blocked origin: ${origin}`));
+    console.warn(`CORS blocked origin: ${origin}`);
+    callback(null, false);
   }
 }

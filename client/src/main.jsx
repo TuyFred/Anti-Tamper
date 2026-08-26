@@ -4,7 +4,10 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
+import { setupLeafletDefaults } from './lib/leafletSetup';
 import './index.css';
+
+setupLeafletDefaults();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

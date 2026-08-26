@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { supabase } from '../config/supabase.js';
 import { getUserProfile } from '../middleware/permissions.js';
 import { isAllowedClientOrigin } from '../config/cors.js';
+import { registerUserLocationHandlers } from './userLocation.js';
 
 export function initSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -13,6 +14,9 @@ export function initSocket(httpServer) {
       methods: ['GET', 'POST'],
       credentials: true,
     },
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
   });
 
   io.use(async (socket, next) => {
@@ -33,12 +37,16 @@ export function initSocket(httpServer) {
   io.on('connection', (socket) => {
     console.log(`🔌 Client connected: ${socket.profile.email}`);
 
-    if (socket.profile.is_approved) {
-      socket.join('approved');
-      if (socket.profile.role?.name === 'admin') {
-        socket.join('admin');
-      }
+    socket.join('approved');
+    socket.join(`user:${socket.userId}`);
+    if (socket.profile.role?.name === 'admin') {
+      socket.join('admin');
     }
+    if (['admin', 'manager'].includes(socket.profile.role?.name)) {
+      socket.join('managers');
+    }
+
+    registerUserLocationHandlers(io, socket);
 
     socket.on('disconnect', () => {
       console.log(`🔌 Client disconnected: ${socket.profile.email}`);

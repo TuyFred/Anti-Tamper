@@ -22,6 +22,7 @@ export function getApiBaseUrl() {
   const fromEnv = trimUrl(import.meta.env.VITE_API_URL);
   if (fromEnv && !isLocalhostUrl(fromEnv)) return fromEnv;
   if (import.meta.env.PROD && isVercelProductionHost()) return PRODUCTION_API_URL;
+  if (import.meta.env.DEV) return '';
   return fromEnv || 'http://localhost:3001';
 }
 
@@ -29,5 +30,8 @@ export function getSocketBaseUrl() {
   const fromEnv = trimUrl(import.meta.env.VITE_SOCKET_URL);
   if (fromEnv && !isLocalhostUrl(fromEnv)) return fromEnv;
   if (import.meta.env.PROD && isVercelProductionHost()) return PRODUCTION_API_URL;
-  return getApiBaseUrl();
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return getApiBaseUrl() || 'http://localhost:3001';
 }

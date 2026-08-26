@@ -9,6 +9,7 @@ import StatCard from '../components/ui/StatCard';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 import DevicePermissions from '../components/DevicePermissions';
+import DeviceRegistry from '../components/DeviceRegistry';
 
 const ROLE_LABELS = {
   admin: 'Manager',
@@ -754,6 +755,7 @@ export default function AdminPanel() {
         )}
       </Modal>
 
+      <DeviceRegistry token={token} devices={devices} onChanged={loadData} />
       <DevicePermissions token={token} users={allUsers} devices={devices} onUsersChanged={loadData} />
     </div>
   );

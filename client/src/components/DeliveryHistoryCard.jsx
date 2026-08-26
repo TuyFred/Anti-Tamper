@@ -20,7 +20,9 @@ import { canDownloadReceipt, downloadDeliveryReceipt, printDeliveryReceipt, getR
 import { DeliveryProgressBar } from './DeliveryPaymentStep';
 import DeliveryPaymentStep, { DeliveryArrivedBanner } from './DeliveryPaymentStep';
 import CustomerUnlockPanel from './CustomerUnlockPanel';
+import DeliveryContactBlock from './DeliveryContactBlock';
 import StarRating from './StarRating';
+import RiderRouteMap from './RiderRouteMap';
 
 function AddressRow({ label, address, accent }) {
   return (
@@ -66,8 +68,10 @@ export default function DeliveryHistoryCard({
   onSubmitProof,
   uploading,
   review,
+  submittedReview,
   onReviewChange,
   onSubmitReview,
+  reviewSubmitting,
   token,
   onUpdated,
   onError,
@@ -86,7 +90,8 @@ export default function DeliveryHistoryCard({
   const awaitingConfirm = delivery.status === 'payment_submitted';
   const canTrack = ['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status);
   const canUnlock = isCustomer && ['rider_assigned', 'in_transit'].includes(delivery.status);
-  const canReview = delivery.status === 'delivered';
+  const canReview = delivery.status === 'delivered' && isCustomer && !submittedReview;
+  const hasReview = Boolean(submittedReview);
 
   return (
     <article className="glass-card rounded-xl overflow-hidden border border-border/80">
@@ -197,15 +202,22 @@ export default function DeliveryHistoryCard({
             </div>
           )}
 
+          {canTrack && delivery.rider && isCustomer && (
+            <DeliveryContactBlock title="Your rider" person={delivery.rider} variant="rider" />
+          )}
+
           {canTrack && (
-            <Link
-              to="/tracking"
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/25 text-sm font-medium text-primary-light hover:bg-primary/15 transition"
-            >
-              <Radio className="w-4 h-4" />
-              Track
-              <Truck className="w-4 h-4 opacity-70" />
-            </Link>
+            <div className="space-y-3">
+              <RiderRouteMap delivery={delivery} height="min(300px, 45vh)" live />
+              <Link
+                to="/tracking"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/25 text-sm font-medium text-primary-light hover:bg-primary/15 transition"
+              >
+                <Radio className="w-4 h-4" />
+                Full tracking map
+                <Truck className="w-4 h-4 opacity-70" />
+              </Link>
+            </div>
           )}
 
           {canUnlock && (
@@ -236,16 +248,35 @@ export default function DeliveryHistoryCard({
               <textarea
                 placeholder="Comment (optional)"
                 value={review?.comment || ''}
-                onChange={(e) => onReviewChange?.({ rating: review?.rating || 5, comment: e.target.value })}
+                onChange={(e) => onReviewChange?.({
+                  rating: review?.rating || 0,
+                  comment: e.target.value,
+                })}
                 className="w-full px-4 py-2 bg-surface rounded-xl border border-border text-white text-sm min-h-[72px]"
               />
               <button
                 type="button"
                 onClick={onSubmitReview}
-                className="px-4 py-2 bg-warning/15 text-warning border border-warning/25 rounded-lg text-sm font-medium"
+                disabled={reviewSubmitting || !review?.rating}
+                className="px-4 py-2 bg-warning/15 text-warning border border-warning/25 rounded-lg text-sm font-medium disabled:opacity-50"
               >
-                Submit
+                {reviewSubmitting ? 'Submitting…' : 'Submit rating'}
               </button>
+            </div>
+          )}
+
+          {hasReview && (
+            <div className="p-4 rounded-xl bg-success/5 border border-success/25 space-y-2">
+              <p className="text-sm font-medium text-success flex items-center gap-2">
+                <Star className="w-4 h-4" /> Your rating
+              </p>
+              <StarRating value={submittedReview.rating} readonly />
+              {submittedReview.comment && (
+                <p className="text-sm text-slate-300 leading-relaxed">{submittedReview.comment}</p>
+              )}
+              <p className="text-[11px] text-slate-500">
+                Submitted {formatDeliveryDateTime(submittedReview.created_at)}
+              </p>
             </div>
           )}
 

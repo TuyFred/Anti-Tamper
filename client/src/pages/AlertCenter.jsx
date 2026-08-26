@@ -5,6 +5,9 @@ import { useSocket } from '../context/SocketContext';
 import { api } from '../lib/api';
 import AlertList from '../components/AlertList';
 import StatCard from '../components/ui/StatCard';
+import Pagination from '../components/ui/Pagination';
+import ContentSkeleton from '../components/ui/ContentSkeleton';
+import { usePagination } from '../hooks/usePagination';
 
 const FILTERS = [
   { id: 'all', label: 'All alerts', icon: List },
@@ -48,6 +51,8 @@ export default function AlertCenter() {
     }
   }, [alerts, filter]);
 
+  const pagination = usePagination(filtered);
+
   const stats = useMemo(() => ({
     total: alerts.length,
     critical: alerts.filter((a) => !a.is_acknowledged && a.severity === 'critical').length,
@@ -86,11 +91,7 @@ export default function AlertCenter() {
   };
 
   if (loading && alerts.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <ContentSkeleton rows={4} />;
   }
 
   return (
@@ -110,7 +111,7 @@ export default function AlertCenter() {
               Alert Center
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              All security events — tamper, shock, fall, unauthorized access. Critical alerts trigger email notifications.
+              Shock, unauthorized open, and tamper events. Times shown in Rwanda (CAT) with live updates.
             </p>
           </div>
           {stats.critical > 0 && (
@@ -147,7 +148,7 @@ export default function AlertCenter() {
 
         <div className="max-h-[calc(100vh-320px)] min-h-[400px] overflow-y-auto scrollbar-thin">
           <AlertList
-            alerts={filtered}
+            alerts={pagination.slice}
             onAcknowledge={handleAcknowledge}
             loading={actionLoading}
             emptyMessage={
@@ -155,6 +156,18 @@ export default function AlertCenter() {
                 ? 'No alerts recorded yet'
                 : 'No alerts match this filter'
             }
+          />
+        </div>
+        <div className="px-5 pb-4">
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.setPage}
+            total={pagination.total}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            hasPrev={pagination.hasPrev}
+            hasNext={pagination.hasNext}
           />
         </div>
       </div>

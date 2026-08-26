@@ -1,29 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Package, Radio, RefreshCw } from 'lucide-react';
+import { Package, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { api } from '../../lib/api';
 import { mergeDeviceWithGps } from '../../lib/geocode';
+import { formatLockStatusLabel } from '../../lib/deliveryUtils';
+import { useDeliveriesCache } from '../../hooks/useDeliveriesCache';
+import { useFleetLocationSubscribe } from '../../hooks/useFleetLocationSubscribe';
 import LiveMap from '../LiveMap';
+import FleetMap from '../FleetMap';
 import DeviceControl from '../DeviceControl';
-import AlertPanel from '../AlertPanel';
-import StatCard from '../ui/StatCard';
-import Badge from '../ui/Badge';
-import { Wifi, AlertTriangle, Bell } from 'lucide-react';
-
-export default function BoxTrackingPanel({ compact = false, showAlerts = true }) {
+export default function BoxTrackingPanel({ compact = false }) {
   const { token, isCustomer, isRider, isManager } = useAuth();
+  const canControlDevices = isManager;
   const {
     devices,
-    alerts,
     setInitialDevices,
-    setInitialAlerts,
-    acknowledgeAlertLocal,
     setDevices,
-    connected,
     gpsUpdates,
+    fleetLocations = {},
   } = useSocket();
+  const { deliveries } = useDeliveriesCache();
+  useFleetLocationSubscribe(isManager);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -33,12 +32,8 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
     async function load() {
       setLoading(true);
       try {
-        const [deviceList, alertList] = await Promise.all([
-          api.getDevices(token),
-          showAlerts ? api.getAlerts(token) : Promise.resolve([]),
-        ]);
+        const deviceList = await api.getDevices(token);
         setInitialDevices(deviceList);
-        if (showAlerts) setInitialAlerts(alertList);
         if (deviceList.length > 0) {
           setSelectedId((prev) => prev || deviceList[0].id);
         }
@@ -49,15 +44,13 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
       }
     }
     if (token) load();
-  }, [token, setInitialDevices, setInitialAlerts, showAlerts, refreshKey]);
+  }, [token, setInitialDevices, refreshKey]);
 
   const selectedDevice = mergeDeviceWithGps(
     devices.find((d) => d.id === selectedId) || devices[0],
     gpsUpdates,
   );
-  const onlineCount = devices.filter((d) => d.is_online).length;
-  const criticalAlerts = alerts.filter((a) => !a.is_acknowledged && a.severity === 'critical').length;
-  const tamperActive = devices.some((d) => d.tamper_status || d.shock_detected);
+  const canManageDevices = isManager;
 
   const handleUnlock = async () => {
     if (!selectedDevice) return;
@@ -103,15 +96,6 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
       alert(err.message);
     } finally {
       setActionLoading(false);
-    }
-  };
-
-  const handleAcknowledge = async (alertId) => {
-    try {
-      await api.acknowledgeAlert(token, alertId);
-      acknowledgeAlertLocal(alertId);
-    } catch (err) {
-      alert(err.message);
     }
   };
 
@@ -173,67 +157,68 @@ export default function BoxTrackingPanel({ compact = false, showAlerts = true })
           </button>
         </div>
       )}
-      {!compact && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Package} label="Boxes" value={devices.length} accent="primary" />
-          <StatCard icon={Wifi} label="Live" value={connected ? 'Yes' : 'No'} accent={connected ? 'success' : 'neutral'} />
-          <StatCard icon={Bell} label="Alerts" value={criticalAlerts} accent={criticalAlerts > 0 ? 'danger' : 'success'} />
-          <StatCard icon={AlertTriangle} label="Tamper" value={tamperActive ? '!' : 'OK'} accent={tamperActive ? 'danger' : 'success'} />
-        </div>
-      )}
-
-      <div className="glass-card rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Radio className="w-4 h-4 text-primary-light" />
-            Active Smart Boxes
-          </h3>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {devices.map((device) => {
-            const hasAlert = device.tamper_status || device.shock_detected;
-            const isSelected = selectedId === device.id;
-            return (
-              <button
-                key={device.id}
-                type="button"
-                onClick={() => setSelectedId(device.id)}
-                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium transition border ${
-                  isSelected
-                    ? 'bg-primary/15 border-primary/30 text-primary-light'
-                    : 'bg-surface border-border text-slate-300 hover:border-slate-600 hover:text-white'
-                }`}
-              >
-                <span className={`w-2 h-2 rounded-full ${device.is_online ? 'bg-success' : 'bg-slate-600'}`} />
-                {device.name}
-                {hasAlert && <Badge variant="danger">!</Badge>}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       <div className={`grid grid-cols-1 ${compact ? 'xl:grid-cols-1' : 'xl:grid-cols-3'} gap-6`}>
         <div className={`${compact ? '' : 'xl:col-span-2'} glass-card rounded-xl p-1 overflow-hidden`}>
-          <div className={`${compact ? 'h-[420px] min-h-[380px]' : 'h-[580px] min-h-[480px]'} p-0 overflow-hidden rounded-xl`}>
-            <LiveMap devices={devices} selectedDevice={selectedDevice} gpsUpdates={gpsUpdates} />
+          <div className={`${compact ? 'tracking-map-height-compact' : 'tracking-map-height tracking-map-height--large'} p-0 overflow-hidden rounded-xl`}>
+            {isManager ? (
+              <FleetMap
+                devices={devices}
+                gpsUpdates={gpsUpdates}
+                fleetLocations={fleetLocations}
+                deliveries={deliveries}
+                selectedDeviceId={selectedId}
+                onSelectDevice={setSelectedId}
+              />
+            ) : (
+              <LiveMap devices={devices} selectedDevice={selectedDevice} gpsUpdates={gpsUpdates} large />
+            )}
           </div>
         </div>
         {!compact && (
-          <DeviceControl
-            device={selectedDevice}
-            canControl={Boolean(selectedDevice?.can_control)}
-            onUnlock={handleUnlock}
-            onLock={handleLock}
-            onToggleAlarm={handleToggleAlarm}
-            loading={actionLoading}
-          />
+          canManageDevices ? (
+            <div className="space-y-4">
+              <div className="glass-card rounded-xl p-4 space-y-2 max-h-48 overflow-y-auto">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">All boxes</p>
+                {devices.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setSelectedId(d.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition ${
+                      selectedId === d.id
+                        ? 'border-primary/40 bg-primary/10 text-white'
+                        : 'border-border bg-surface text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span className="font-mono text-primary-light">{d.device_id}</span>
+                    <span className="block text-xs text-slate-500">{formatLockStatusLabel(d.lock_status)}</span>
+                  </button>
+                ))}
+              </div>
+              <DeviceControl
+                device={selectedDevice}
+                canControl={canControlDevices || Boolean(selectedDevice?.can_control)}
+                onUnlock={handleUnlock}
+                onLock={handleLock}
+                onToggleAlarm={handleToggleAlarm}
+                loading={actionLoading}
+              />
+            </div>
+          ) : (
+            <div className="glass-card rounded-xl p-5 space-y-3 h-full">
+              {selectedDevice && (
+                <div className="rounded-xl border border-border bg-surface p-3 space-y-1 text-sm text-slate-400">
+                  <p className="font-mono text-sm text-primary-light">{selectedDevice.device_id}</p>
+                  <p className="font-medium text-white">{selectedDevice.name}</p>
+                  <p>Status: <span className="text-slate-200">{selectedDevice.is_online ? 'Online' : 'Offline'}</span></p>
+                  <p>Box: <span className="text-slate-200">{formatLockStatusLabel(selectedDevice.lock_status)}</span></p>
+                </div>
+              )}
+            </div>
+          )
         )}
       </div>
-
-      {showAlerts && !compact && (
-        <AlertPanel alerts={alerts} onAcknowledge={handleAcknowledge} loading={actionLoading} />
-      )}
     </div>
   );
 }

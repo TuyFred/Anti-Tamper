@@ -1,56 +1,168 @@
 /**
- * Shared map settings — English basemap and navigation (Rwanda operations).
+
+ * Map settings — English labels, OpenStreetMap tiles.
+
  */
+
+export const MAP_LANG = 'en';
+
+export const MAP_REGION = 'RW';
+
+
+
 export const MAP_TILE_CONFIG = {
-  url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  /** OpenStreetMap — real streets, sector roads, and place names at zoom 15+ */
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   attribution:
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
-    + '&copy; <a href="https://carto.com/attributions">CARTO</a>',
-  subdomains: 'abcd',
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  subdomains: 'abc',
+  maxZoom: 19,
+  minZoom: 11,
 };
 
-/** Google Maps directions — English UI (hl=en). */
-export function googleMapsDirectionsUrl(lat, lng) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving&hl=en`;
-}
+
 
 export const MAP_LABELS = {
-  liveMap: 'Live tracking map',
-  liveMapSubtitle: 'Real-time Smart Box GPS across Rwanda',
-  pickupPin: 'Pickup location (A)',
-  deliveryPin: 'Delivery location (B)',
-  clickToPin: 'Tap the map to place your pin',
-  resolvingLocation: 'Looking up address in Rwanda…',
-  selectedLocation: 'Selected location',
-  followGps: 'Follow live',
-  followingGps: 'Following live',
-  followGpsHint: 'Map camera follows the box in real time',
+
+  liveMap: 'Live map',
+
+  liveMapSubtitle: 'Live path shows where the box is going',
+
+  pickupPin: 'Pickup (A)',
+
+  deliveryPin: 'Delivery (B)',
+
+  clickToPin: 'Tap the map to set location',
+
+  useMyLocation: 'Use my location',
+
+  locatingYou: 'Getting location…',
+
+  myLocation: 'You',
+
+  myLocationHint: 'Allow location in your browser',
+
+  locationDenied: 'Location blocked',
+
+  locationDeniedHint: 'Enable location in settings, then try again',
+
+  hardwareGps: 'Box GPS (live)',
+
+  fallbackGps: 'Phone / laptop GPS',
+
+  customerLiveGps: 'Customer (live GPS)',
+
+  riderLiveGps: 'Rider (live GPS)',
+
+  deliveryAddressPin: 'Delivery address',
+
+  resolvingLocation: 'Finding address…',
+
+  selectedLocation: 'Selected',
+
+  followGps: 'Follow box',
+
+  followingGps: 'Following box',
+
+  followGpsHint: 'Map follows the Smart Box',
+
+  showBoxOnMap: 'Show box on map',
+
+  followMe: 'Follow me',
+
+  followingMe: 'Following you',
+
   fullscreen: 'Full screen',
+
   exitFullscreen: 'Exit full screen',
+
   closeFullscreen: 'Close',
+
   online: 'Online',
+
   offline: 'Offline',
+
   live: 'Live',
-  tamperAlert: 'Tamper alert active',
+
+  liveNow: 'Live',
+
+  tamperAlert: 'Tamper alert',
+
   shockDetected: 'Shock detected',
-  liveGpsFooter: 'Live GPS — position updates automatically as the Smart Box moves',
-  liveTrackingActive: 'Live tracking active',
-  realTimeGps: 'Real-time GPS from Smart Box hardware',
-  pressEsc: 'Press Esc to exit full screen',
-  navigatePickup: 'Directions to pickup',
-  navigateDelivery: 'Directions to delivery',
-  openInMaps: 'Open in Google Maps',
-  openDirections: 'Get directions',
-  noGpsSignal: 'Awaiting live GPS',
-  noGpsHint: 'The map will show the Smart Box once the device is online and reporting its location in Rwanda.',
-  liveLocation: 'Current position',
-  locatedInRwanda: 'Located in Rwanda',
-  coordinatesRwanda: 'GPS coordinates in Rwanda',
-  lastUpdated: 'Last updated',
-  routeDistance: 'Route distance',
-  inTransit: 'In transit',
-  smartBox: 'Smart Box',
-  allDevices: 'All Smart Boxes',
-  devicesOnMap: 'boxes on map',
+
+  liveGpsFooter: 'GPS updates from the Smart Box',
+
+  liveTrackingActive: 'Live tracking',
+
+  realTimeGps: 'Smart Box GPS on map',
+
+  pressEsc: 'Press Esc to close',
+
+  navigatePickup: 'Pickup on map',
+
+  navigateDelivery: 'Delivery on map',
+
+  navigateFullRoute: 'Full route',
+
+  openInMaps: 'View on map',
+
+  openDirections: 'View on map',
+
+  viewOnMap: 'View on map',
+
+  noGpsSignal: 'Waiting for box GPS',
+
+  noGpsHint: 'Map centers on your phone/laptop GPS until the box sends GPS. Your marker (cyan) and box marker (blue) stay separate.',
+  mapUsingYourLocation: 'Your location (box GPS waiting)',
+
+  enableLocation: 'Allow location',
+
   mapLoading: 'Loading map…',
+
+  locatedInRwanda: 'Rwanda',
+
+  coordinatesRwanda: 'Coordinates',
+
+  lastUpdated: 'Updated',
+
+  routeDistance: 'Distance',
+
+  inTransit: 'In transit',
+
+  smartBox: 'Smart Box',
+
+  allDevices: 'Boxes',
+
+  devicesOnMap: 'on map',
+
+  liveLocation: 'Position',
+
+  riderEnRoute: 'On the way',
+
+  boxAtPickup: 'At pickup',
+
+  legendA: 'Pickup',
+
+  legendB: 'Customer',
+  legendBox: 'Smart Box',
+  legendCustomer: 'Customer',
+  deviceIdLabel: 'Device ID',
+  yourLocationTitle: 'Your location',
+  deviceLocationTitle: 'Box location',
+  customerLocationTitle: 'Customer location',
+  riderLocationTitle: 'Your location (rider)',
+  waitingDeviceGps: 'Waiting for GPS from this box',
+  lastKnownPosition: 'Last known position',
+  registerDeviceHint: 'Use the same ID in firmware and Admin (e.g. BOX-001)',
+  noGpsForDevice: 'No GPS yet',
+  movementPath: 'Movement path',
+  heading: 'Heading',
+  enableLocationTitle: 'Enable live GPS',
+  enableLocationHint: 'Allow location on your phone or laptop to see yourself on the map and share with rider/customer.',
+  locationNeedsHttps: 'Secure connection required',
+  riderLiveLocation: 'Rider (live GPS)',
+  customerLiveLocation: 'Customer (live GPS)',
+  sharingLocation: 'Sharing your location',
+  liveGpsActive: 'Live GPS active',
 };
+

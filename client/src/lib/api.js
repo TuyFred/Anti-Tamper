@@ -12,7 +12,19 @@ export async function apiFetch(path, options = {}, token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch (err) {
+    const network = new Error(
+      path.startsWith('/api/auth/login')
+        ? 'Cannot reach the API server. Start it with: cd server && npm run dev'
+        : 'Network error — is the server running on port 3001?',
+    );
+    network.code = 'NETWORK_ERROR';
+    throw network;
+  }
+
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
@@ -26,8 +38,19 @@ export async function apiFetch(path, options = {}, token) {
 }
 
 export const api = {
+  login: (payload) =>
+    apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
   getMe: (token) => apiFetch('/api/users/me', {}, token),
-  register: (payload) => apiFetch('/api/users/register', { method: 'POST', body: JSON.stringify(payload) }),
+  updateMyProfile: (token, payload) =>
+    apiFetch('/api/users/me', { method: 'PATCH', body: JSON.stringify(payload) }, token),
+  sendRegisterOtp: (payload) =>
+    apiFetch('/api/auth/register/send-otp', { method: 'POST', body: JSON.stringify(payload) }),
+  verifyRegister: (payload) =>
+    apiFetch('/api/auth/register/verify', { method: 'POST', body: JSON.stringify(payload) }),
+  forgotPassword: (email) =>
+    apiFetch('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPasswordWithOtp: (payload) =>
+    apiFetch('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(payload) }),
   getUsers: (token) => apiFetch('/api/users', {}, token),
   getPendingUsers: (token) => apiFetch('/api/users/pending', {}, token),
   approveUser: (token, userId, roleId) =>
@@ -49,6 +72,10 @@ export const api = {
   getDevices: (token) => apiFetch('/api/devices', {}, token),
   getAllDeviceAccess: (token) => apiFetch('/api/devices/access/list', {}, token),
   getDevice: (token, deviceId) => apiFetch(`/api/devices/${deviceId}`, {}, token),
+  createDevice: (token, payload) =>
+    apiFetch('/api/devices', { method: 'POST', body: JSON.stringify(payload) }, token),
+  updateDevice: (token, deviceId, payload) =>
+    apiFetch(`/api/devices/${deviceId}`, { method: 'PATCH', body: JSON.stringify(payload) }, token),
   unlockDevice: (token, deviceId) => apiFetch(`/api/devices/${deviceId}/unlock`, { method: 'POST' }, token),
   lockDevice: (token, deviceId) => apiFetch(`/api/devices/${deviceId}/lock`, { method: 'POST' }, token),
   toggleAlarm: (token, deviceId, active) =>
@@ -85,6 +112,8 @@ export const api = {
     apiFetch(`/api/deliveries/${id}/assign-rider`, { method: 'POST', body: JSON.stringify(payload) }, token),
   sendDeliveryToken: (token, id) =>
     apiFetch(`/api/deliveries/${id}/send-token`, { method: 'POST' }, token),
+  requestDeliveryToken: (token, id) =>
+    apiFetch(`/api/deliveries/${id}/request-token`, { method: 'POST' }, token),
   startTransit: (token, id) =>
     apiFetch(`/api/deliveries/${id}/start-transit`, { method: 'POST' }, token),
   unlockWithToken: (token, id, tokenCode) =>

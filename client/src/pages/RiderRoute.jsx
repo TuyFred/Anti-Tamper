@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
-  Truck, MapPin, Play, Package, Loader2, Navigation, User,
+  Truck, MapPin, Play, Package, Loader2, Navigation,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import Badge from '../components/ui/Badge';
 import RiderRouteMap from '../components/RiderRouteMap';
+import DeliveryContactBlock from '../components/DeliveryContactBlock';
 import {
   deliveryStatusMeta, formatPrice, formatDeliveryRef, formatDeliveryDate,
 } from '../lib/deliveryUtils';
@@ -140,17 +141,14 @@ export default function RiderRoute() {
               </div>
 
               {selected.customer && (
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <User className="w-4 h-4 text-slate-500" />
-                  {selected.customer.full_name || selected.customer.email}
-                </div>
+                <DeliveryContactBlock title="Customer contact" person={selected.customer} />
               )}
 
               {selected.device && (
                 <p className="text-xs text-slate-400 font-mono">Smart Box: {selected.device.device_id} · {selected.device.lock_status}</p>
               )}
 
-              <RiderRouteMap delivery={selected} height="260px" />
+              <RiderRouteMap delivery={selected} height="min(380px, 55vh)" live />
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <AddressCard label="Pickup A — collect package" address={selected.pickup_address} accent="pickup" />

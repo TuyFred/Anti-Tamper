@@ -1,14 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
-  Shield, LogOut, Wifi, WifiOff, Home,
+  Shield, LogOut, Wifi, WifiOff,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getAppNavItems } from '../lib/navigation';
+import { prefetchRoute } from '../lib/routePrefetch';
 import { NavIcon } from './dashboard/DashboardPanel';
-import MobileNavDrawer, { MobileNavSection, MobileNavLink } from './MobileNavDrawer';
+import MobileNavDrawer, { MobileNavSection } from './MobileNavDrawer';
 
 function NavLinkItem({ item, active, mobile, badgeCount, onNavigate }) {
   return (
@@ -16,6 +17,8 @@ function NavLinkItem({ item, active, mobile, badgeCount, onNavigate }) {
       to={item.to}
       title={item.label}
       onClick={onNavigate}
+      onMouseEnter={() => prefetchRoute(item.to)}
+      onFocus={() => prefetchRoute(item.to)}
       className={`relative flex items-center gap-3 rounded-xl font-medium transition group touch-manipulation ${
         mobile ? 'px-4 py-3.5 text-base min-h-[52px]' : 'px-3 py-2.5 text-sm'
       } ${
@@ -42,7 +45,7 @@ function NavLinkItem({ item, active, mobile, badgeCount, onNavigate }) {
 
 export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobileClose }) {
   const { profile, signOut, isManager, isCustomer, isRider } = useAuth();
-  const { connected, alerts } = useSocket();
+  const { connected, alerts, connectionStatus } = useSocket();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -70,6 +73,12 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
 
   const mainItems = navItems.filter((i) => i.section === 'main');
   const controlItems = navItems.filter((i) => i.section === 'control');
+  const accountItems = navItems.filter((i) => i.section === 'account');
+  const isActivePath = (target) => {
+    if (location.pathname === target) return true;
+    if (target === '/dashboard') return location.pathname.startsWith('/dashboard');
+    return false;
+  };
 
   const renderSection = (title, items, mobile) => (
     <>
@@ -81,7 +90,7 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
           <NavLinkItem
             key={item.to}
             item={item}
-            active={location.pathname === item.to}
+            active={isActivePath(item.to)}
             mobile={mobile}
             badgeCount={badgeCount}
             onNavigate={mobile ? onMobileClose : undefined}
@@ -93,16 +102,21 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
 
   const desktopFooter = (
     <div className="border-t border-border space-y-2 p-3">
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${collapsed ? 'justify-center' : ''}`}>
-        {connected ? (
-          <Wifi className="w-4 h-4 text-success shrink-0" />
-        ) : (
-          <WifiOff className="w-4 h-4 text-slate-500 shrink-0" />
-        )}
+      <div className={`rounded-xl border px-3 py-2 ${connected ? 'border-success/20 bg-success/10' : 'border-slate-700 bg-surface-lighter'} ${collapsed ? 'flex justify-center' : ''}`}>
+        <div className="flex items-center gap-2">
+          {connected ? (
+            <Wifi className="w-4 h-4 text-success shrink-0" />
+          ) : (
+            <WifiOff className="w-4 h-4 text-slate-500 shrink-0" />
+          )}
+          {!collapsed && (
+            <span className={`text-xs font-semibold ${connected ? 'text-success' : 'text-slate-400'}`}>
+              {connectionStatus.label}
+            </span>
+          )}
+        </div>
         {!collapsed && (
-          <span className={`text-xs ${connected ? 'text-success' : 'text-slate-500'}`}>
-            {connected ? 'Live' : 'Off'}
-          </span>
+          <p className="mt-1 text-[11px] leading-4 text-slate-400">{connectionStatus.detail}</p>
         )}
       </div>
 
@@ -112,8 +126,10 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
         </div>
         {!collapsed && (
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-white truncate text-sm">{profile?.full_name || 'User'}</p>
-            <p className="text-slate-500 text-[11px]">{roleLabel}</p>
+            <Link to="/profile" className="block hover:text-primary-light transition">
+              <p className="font-medium text-white truncate text-sm">{profile?.full_name || 'User'}</p>
+              <p className="text-slate-500 text-[11px]">{roleLabel}</p>
+            </Link>
           </div>
         )}
       </div>
@@ -167,11 +183,11 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
         }`}
       >
         <div className="p-4 border-b border-border flex items-center gap-3">
-          <Link to="/" className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
+          <Link to="/dashboard" className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
             <Shield className="w-5 h-5 text-white" />
           </Link>
           {!collapsed && (
-            <Link to="/" className="flex-1 min-w-0">
+            <Link to="/dashboard" className="flex-1 min-w-0">
               <h1 className="font-bold text-white text-sm leading-tight truncate">Smart Box</h1>
               <p className="text-[10px] text-slate-500 uppercase tracking-wider">Delivery System</p>
             </Link>
@@ -192,7 +208,7 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
               <NavLinkItem
                 key={item.to}
                 item={item}
-                active={location.pathname === item.to}
+                active={isActivePath(item.to)}
                 mobile={false}
                 badgeCount={badgeCount}
               />
@@ -201,19 +217,9 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
             <div className="space-y-1">
               {mainItems.length > 0 && renderSection('Overview', mainItems, false)}
               {controlItems.length > 0 && renderSection('Control', controlItems, false)}
+              {accountItems.length > 0 && renderSection('Account', accountItems, false)}
             </div>
           )}
-
-          <div className="mt-2">
-            <Link
-              to="/"
-              title="Website home"
-              className="flex items-center gap-3 rounded-xl font-medium text-slate-500 hover:text-white hover:bg-surface-lighter border border-transparent transition px-3 py-2.5 text-sm"
-            >
-              <Home className="w-5 h-5 shrink-0" />
-              {!collapsed && <span>Website home</span>}
-            </Link>
-          </div>
         </nav>
 
         {desktopFooter}
@@ -235,7 +241,7 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
                   <NavLinkItem
                     key={item.to}
                     item={item}
-                    active={location.pathname === item.to}
+                    active={isActivePath(item.to)}
                     mobile
                     badgeCount={badgeCount}
                     onNavigate={onMobileClose}
@@ -250,7 +256,7 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
                   <NavLinkItem
                     key={item.to}
                     item={item}
-                    active={location.pathname === item.to}
+                    active={isActivePath(item.to)}
                     mobile
                     badgeCount={badgeCount}
                     onNavigate={onMobileClose}
@@ -259,15 +265,20 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
               </MobileNavSection>
             )}
 
-            <MobileNavSection title="More">
-              <MobileNavLink
-                to="/"
-                onClick={onMobileClose}
-                icon={Home}
-                label="Website"
-                trailing={<ChevronRight className="w-5 h-5 text-slate-600 shrink-0" />}
-              />
-            </MobileNavSection>
+            {accountItems.length > 0 && (
+              <MobileNavSection title="Account">
+                {accountItems.map((item) => (
+                  <NavLinkItem
+                    key={item.to}
+                    item={item}
+                    active={isActivePath(item.to)}
+                    mobile
+                    badgeCount={badgeCount}
+                    onNavigate={onMobileClose}
+                  />
+                ))}
+              </MobileNavSection>
+            )}
           </div>
         </MobileNavDrawer>
       )}

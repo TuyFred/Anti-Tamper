@@ -30,21 +30,20 @@ export function hasPermission(profile, permissionName) {
 }
 
 export function isAdmin(profile) {
-  return profile?.role?.name === 'admin' && profile?.is_approved === true;
+  return profile?.role?.name === 'admin';
 }
 
 export function isManager(profile) {
-  if (!profile?.is_approved) return false;
-  const role = profile.role?.name;
+  const role = profile?.role?.name;
   return role === 'admin' || role === 'manager';
 }
 
 export function isCustomer(profile) {
-  return profile?.is_approved && profile?.role?.name === 'customer';
+  return profile?.role?.name === 'customer';
 }
 
 export function isRider(profile) {
-  return profile?.is_approved && profile?.role?.name === 'motor_rider';
+  return profile?.role?.name === 'motor_rider';
 }
 
 export function getRoleName(profile) {
@@ -53,7 +52,7 @@ export function getRoleName(profile) {
 
 export async function canAccessDevice(userId, deviceUuid, requireControl = false) {
   const profile = await getUserProfile(userId);
-  if (!profile || !profile.is_approved) return false;
+  if (!profile) return false;
 
   if (isAdmin(profile) || isManager(profile)) return true;
 
@@ -82,7 +81,7 @@ export async function canAccessDevice(userId, deviceUuid, requireControl = false
 
 export async function getAccessibleDevices(userId) {
   const profile = await getUserProfile(userId);
-  if (!profile || !profile.is_approved) return [];
+  if (!profile) return [];
 
   if (isAdmin(profile) || isManager(profile)) {
     const { data } = await supabase.from('devices').select('*').order('name');

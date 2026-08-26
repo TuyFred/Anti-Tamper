@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../config/supabase.js';
+import { reverseGeocodeFromOsm } from '../lib/geocode.js';
 
 const router = Router();
 
@@ -51,6 +52,25 @@ router.get('/rwanda', async (_req, res) => {
     res.json({ provinces: provinces.sort(), admin });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/locations/reverse?lat=&lng= — street + Rwanda admin divisions (English) */
+router.get('/reverse', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng required' });
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ error: 'Invalid coordinates' });
+    }
+
+    const address = await reverseGeocodeFromOsm(lat, lng);
+    res.json({ lat, lng, ...address });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Geocode failed' });
   }
 });
 

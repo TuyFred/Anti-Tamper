@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, clearStaleAuthSession } from '../lib/supabase';
 import { api } from '../lib/api';
 import { formatAuthError } from '../lib/authErrors';
 
@@ -23,13 +23,26 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    supabase.auth.getSession().then(({ data: { session: s }, error }) => {
+      if (error && /fetch|network|retryable/i.test(error.message || '')) {
+        clearStaleAuthSession();
+        setSession(null);
+        setLoading(false);
+        return;
+      }
       setSession(s);
       if (s) loadProfile(s.access_token);
       setLoading(false);
+    }).catch(() => {
+      clearStaleAuthSession();
+      setSession(null);
+      setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'TOKEN_REFRESHED' && !s) {
+        clearStaleAuthSession();
+      }
       setSession(s);
       if (s) loadProfile(s.access_token);
       else {
@@ -42,24 +55,53 @@ export function AuthProvider({ children }) {
   }, [loadProfile]);
 
   const signIn = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-    if (error) {
-      const friendly = new Error(formatAuthError(error));
-      friendly.code = error.code;
+    try {
+      const data = await api.login({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      if (!data.session?.access_token) {
+        throw new Error('Login failed — no session returned.');
+      }
+      const { error } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+      if (error) throw error;
+    } catch (err) {
+      const friendly = new Error(formatAuthError(err));
+      friendly.code = err.code;
       throw friendly;
     }
   };
 
-  const signUp = async (email, password, fullName) => {
-    await api.register({
+  const signUp = async (email, password, fullName, otp) => {
+    await api.verifyRegister({
+      email: email.trim().toLowerCase(),
+      otp,
+    });
+    await signIn(email, password);
+  };
+
+  const sendRegisterOtp = async (email, password, fullName, phone) => {
+    return api.sendRegisterOtp({
       email: email.trim().toLowerCase(),
       password,
       full_name: fullName?.trim(),
+      phone: phone?.trim(),
     });
-    await signIn(email, password);
+  };
+
+  const requestPasswordReset = async (email) => {
+    return api.forgotPassword(email.trim().toLowerCase());
+  };
+
+  const resetPasswordWithOtp = async (email, otp, password) => {
+    return api.resetPasswordWithOtp({
+      email: email.trim().toLowerCase(),
+      otp,
+      password,
+    });
   };
 
   const signOut = async () => {
@@ -70,12 +112,12 @@ export function AuthProvider({ children }) {
     if (session) await loadProfile(session.access_token);
   }, [session, loadProfile]);
 
-  const isAdmin = profile?.role?.name === 'admin' && profile?.is_approved;
   const roleName = profile?.role?.name || 'viewer';
-  const isManager = profile?.is_approved && (roleName === 'admin' || roleName === 'manager');
-  const isCustomer = profile?.is_approved && roleName === 'customer';
-  const isRider = profile?.is_approved && roleName === 'motor_rider';
-  const isApproved = profile?.is_approved === true;
+  const isAdmin = roleName === 'admin';
+  const isManager = roleName === 'admin' || roleName === 'manager';
+  const isCustomer = roleName === 'customer';
+  const isRider = roleName === 'motor_rider';
+  const isApproved = !!session;
   const hasPermission = (perm) => permissions.includes(perm) || isManager;
 
   return (
@@ -87,6 +129,9 @@ export function AuthProvider({ children }) {
         loading,
         signIn,
         signUp,
+        sendRegisterOtp,
+        requestPasswordReset,
+        resetPasswordWithOtp,
         signOut,
         refreshProfile,
         isAdmin,

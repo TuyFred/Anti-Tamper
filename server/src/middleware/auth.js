@@ -1,5 +1,25 @@
 import { supabase } from '../config/supabase.js';
 import { getUserProfile, hasPermission, isAdmin, isManager } from './permissions.js';
+import { ensureUserProfile } from '../lib/profile.js';
+
+export async function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid authorization header' });
+  }
+
+  const token = authHeader.slice(7);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  req.user = user;
+  req.token = token;
+  req.profile = await getUserProfile(user.id);
+  next();
+}
 
 export async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -14,9 +34,12 @@ export async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  const profile = await getUserProfile(user.id);
+  let profile = await getUserProfile(user.id);
   if (!profile) {
-    return res.status(403).json({ error: 'Profile not found' });
+    profile = await ensureUserProfile(user);
+  }
+  if (!profile) {
+    return res.status(403).json({ error: 'Profile not found — try signing out and back in' });
   }
 
   req.user = user;
@@ -25,13 +48,7 @@ export async function authenticate(req, res, next) {
   next();
 }
 
-export function requireApproved(req, res, next) {
-  if (!req.profile.is_approved) {
-    return res.status(403).json({
-      error: 'Account pending admin approval',
-      code: 'PENDING_APPROVAL',
-    });
-  }
+export function requireApproved(_req, _res, next) {
   next();
 }
 

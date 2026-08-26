@@ -51,4 +51,4 @@ export function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export const KIGALI_CENTER = [-1.9403, 29.8739];
+export const KIGALI_CENTER = [-1.9536, 30.0946];

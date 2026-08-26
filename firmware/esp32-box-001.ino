@@ -10,8 +10,8 @@
 const char* WIFI_SSID     = "net";
 const char* WIFI_PASSWORD = "1234567890";
 
-// MQTT — same broker as server MQTT_BROKER_URL (root .env)
-const char* MQTT_SERVER = "test.mosquitto.org";
+// MQTT — same broker as server MQTT_BROKER_URL (broker.emqx.io — test.mosquitto.org blocked on many networks)
+const char* MQTT_SERVER = "broker.emqx.io";
 const int   MQTT_PORT   = 1883;
 
 String TOPIC_GPS     = String("box/") + DEVICE_ID + "/gps";
@@ -23,15 +23,25 @@ String TOPIC_COMMAND = String("box/") + DEVICE_ID + "/command";
 // ================= HARDWARE PINS =================
 const int IR_SENSOR_PIN = 4;       // LOW = CLOSED, HIGH = OPENED
 const int RELAY_LOCK_PIN = 26;
-const int BUTTON_PIN = 27;
-const int LED_INDICATOR_PIN = 23;  // green / open
+const int BUTTON_PIN = 27;         // open when primed (serial 'o') OR lock when box is open
+const int CLOSE_BUTTON_PIN = 32;   // optional second button — lock only when open (set -1 if unused)
+// GPIO 18 = WiFi LED (blue, ON when connected — stays on even when box is locked)
+// GPIO 19 + 23 = extra blue LEDs — join GPIO 18 so all 3 are ON when box is unlocked
+const int WIFI_LED_PIN = 18;
+const int OPEN_LED_PINS[] = { 19, 23 };
+const int OPEN_LED_COUNT = 2;
+const bool OPEN_LED_ACTIVE_LOW = false;
 const int BUZZER_PIN = 25;
-const int RED_LED_PIN = 19;        // tamper / shock / alarm
-const int WIFI_LED = 18;           // ON = WiFi connected
 
 const int GPS_RX_PIN = 16;
-const int GPS_TX_PIN = 17;
+const int GPS_TX_PIN = 17;  // ESP32 TX → GPS module RX
 const int MPU_ADDR = 0x68;
+
+// Many inexpensive relay boards are active-low (LOW = relay ON).
+const bool RELAY_MODULE_ACTIVE_LOW = true;
+// true  = relay ON opens the box (electric strike / mag lock) — most common
+// false = relay ON locks the box (solenoid bolt) — set false if Unlock/Lock are backwards
+const bool RELAY_ENERGIZE_TO_UNLOCK = false;
 
 // ================= TIMING =================
 const unsigned long CMD_TIMEOUT_MS = 10000;
@@ -39,16 +49,22 @@ const unsigned long LOCK_OPEN_MS = 5000;
 const unsigned long REMOTE_UNLOCK_MS = 60000; // dashboard unlock → button window
 const unsigned long BLINK_INTERVAL = 250;
 const unsigned long RAPID_BLINK = 100;
-const unsigned long SHOCK_ALARM_MS = 5000;
-const unsigned long MPU_SAMPLE_MS = 30;
-const unsigned long GPS_PRINT_MS = 2000;
+const unsigned long SHOCK_ALARM_MS = 15000;
+const unsigned long SHOCK_COOLDOWN_MS = 20000;
+const unsigned long MPU_SAMPLE_MS = 15;
+const unsigned long GPS_PRINT_MS = 5000;
 const unsigned long GPS_PUBLISH_MS = 3000;
-const unsigned long STATUS_PUBLISH_MS = 10000;
+const unsigned long GPS_BAUD_RETRY_MS = 20000;
+const unsigned long STATUS_PUBLISH_MS = 5000;
 const unsigned long WIFI_RETRY_MS = 10000;
-const unsigned long MQTT_RETRY_MS = 5000;
+const unsigned long MQTT_RETRY_MS = 3000;
 
-// MPU6050 — hard hit only
-const int32_t SHOCK_THRESHOLD = 60000;
+// MPU6050 — real impact only (hand-waves / vibration stay below threshold)
+const int32_t SHOCK_THRESHOLD = 8000;
+const int32_t SHOCK_AXIS_MIN = 3500;        // at least 2 axes must spike for a hit
+const int32_t SHOCK_DEBUG_THRESHOLD = 3000;
+const uint8_t SHOCK_CONFIRM_READS = 5;
+const unsigned long MPU_SETTLE_MS = 8000;   // ignore motion right after boot
 
 enum SystemState {
   IDLE,
@@ -63,6 +79,8 @@ unsigned long lockOpenTimestamp = 0;
 unsigned long blinkTimestamp = 0;
 unsigned long redBlinkTimestamp = 0;
 unsigned long shockTimestamp = 0;
+unsigned long lastShockPublishMs = 0;
+uint8_t shockConfirmCount = 0;
 unsigned long lastMpuReadTimestamp = 0;
 unsigned long lastGpsPrintTimestamp = 0;
 unsigned long lastGpsPublishMs = 0;
@@ -71,14 +89,29 @@ unsigned long lastMqttRetryMs = 0;
 
 int blinkCount = 0;
 bool ledState = false;
-bool redLedState = false;
+bool blueBlinkState = false;
+bool openLedsEnabled = false;       // true = all 3 blue LEDs on (box unlocked)
+bool alarmLedsOverride = false;     // tamper/shock/dashboard alarm blinking LEDs
 bool lastIrState = false;
 bool shockAlarmActive = false;
 bool remoteAlarmActive = false;
 bool lastTamperPublished = false;
 bool remoteUnlockWindow = false;
+bool holdUnlocked = false;          // remote unlock stays open until button locks
+unsigned long lastButtonMs = 0;
+unsigned long lastCloseButtonMs = 0;
+const unsigned long BUTTON_DEBOUNCE_MS = 400;
 
 int16_t lastX = 0, lastY = 0, lastZ = 0;
+
+uint32_t gpsBytesTotal = 0;
+uint32_t gpsBytesWindow = 0;
+unsigned long gpsWindowStartMs = 0;
+unsigned long lastGpsByteMs = 0;
+unsigned long lastGpsBaudTryMs = 0;
+uint8_t gpsBaudIndex = 0;
+bool gpsWiringWarned = false;
+const uint32_t GPS_BAUD_RATES[] = {9600, 115200, 4800};
 
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(2);
@@ -89,19 +122,32 @@ void wifiTask(void* parameter);
 void updateWifiLed();
 void maintainMqtt();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
+void setLockRelay(bool unlocked);
+void writeLedPin(int pin, bool on);
+void writeThreeBlueLeds(bool on);
+void applyOpenLeds();
+void writeAllOpenLeds(bool on);
+void setOpenLeds(bool on);
+void setAlarmLedsSolid(bool on);
+void blinkAlarmLeds();
+void restoreOpenLedsAfterAlarm();
 void publishGps();
 void publishTamper(bool tampered);
-void publishShock(int32_t magnitude);
+void publishShock(int32_t magnitude, bool isTouch);
+void publishShockClear();
 void publishStatus();
+void lockBoxPhysical(const char* reason);
 void handleRemoteUnlock();
 void handleRemoteLock();
 void handleRemoteAlarm(bool active);
 void readMPU(int16_t &ax, int16_t &ay, int16_t &az);
+void initGpsSerial(uint32_t baud);
+void tryNextGpsBaud();
 
 void setup() {
   Serial.begin(115200);
 
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  initGpsSerial(GPS_BAUD_RATES[0]);
 
   Wire.begin(21, 22);
   Wire.beginTransmission(MPU_ADDR);
@@ -111,21 +157,25 @@ void setup() {
 
   pinMode(IR_SENSOR_PIN, INPUT_PULLUP);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  if (CLOSE_BUTTON_PIN >= 0) {
+    pinMode(CLOSE_BUTTON_PIN, INPUT_PULLUP);
+  }
   pinMode(RELAY_LOCK_PIN, OUTPUT);
-  pinMode(LED_INDICATOR_PIN, OUTPUT);
+  pinMode(WIFI_LED_PIN, OUTPUT);
+  for (int i = 0; i < OPEN_LED_COUNT; i++) {
+    pinMode(OPEN_LED_PINS[i], OUTPUT);
+  }
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
-  pinMode(WIFI_LED, OUTPUT);
 
-  digitalWrite(RELAY_LOCK_PIN, LOW);
-  digitalWrite(LED_INDICATOR_PIN, LOW);
+  setLockRelay(false);
+  writeThreeBlueLeds(false);
   digitalWrite(BUZZER_PIN, LOW);
-  digitalWrite(RED_LED_PIN, LOW);
-  digitalWrite(WIFI_LED, LOW);
 
   mqtt.setServer(MQTT_SERVER, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(512);
+  mqtt.setKeepAlive(45);
+  mqtt.setSocketTimeout(20);
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -136,12 +186,32 @@ void setup() {
   readMPU(lastX, lastY, lastZ);
   lastIrState = (digitalRead(IR_SENSOR_PIN) == LOW);
 
-  Serial.println("[BOOT] BOX-001 online — WiFi + MQTT → dashboard");
+  Serial.println("[BOOT] BOX-001 firmware 2026-03-26 — shock≥8000, 5 confirms, 2-axis");
   Serial.print("[WIFI] Connecting to ");
   Serial.println(WIFI_SSID);
   Serial.print("[MQTT] Broker ");
   Serial.println(MQTT_SERVER);
-  Serial.println("[HELP] Serial 'o' primes local button unlock (10s)");
+  Serial.println("[HELP] Serial 'o' primes GPIO27 open (10s). GPIO27 or GPIO32 locks when open.");
+  Serial.println("[HELP] Dashboard token unlock stays open until button or Close on app.");
+  Serial.println("[GPS] NEO-6M wiring: GPS TX→GPIO16, GPS RX→GPIO17, VCC 3.3V, GND common.");
+  Serial.println("[GPS] First fix needs clear sky (outdoor). Cold start can take 2-15 min.");
+}
+
+void initGpsSerial(uint32_t baud) {
+  gpsSerial.end();
+  delay(50);
+  gpsSerial.begin(baud, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  gpsBytesWindow = 0;
+  gpsWindowStartMs = millis();
+  Serial.print("[GPS] UART2 @ ");
+  Serial.print(baud);
+  Serial.println(" baud");
+}
+
+void tryNextGpsBaud() {
+  gpsBaudIndex = (gpsBaudIndex + 1) % (sizeof(GPS_BAUD_RATES) / sizeof(GPS_BAUD_RATES[0]));
+  initGpsSerial(GPS_BAUD_RATES[gpsBaudIndex]);
+  lastGpsBaudTryMs = millis();
 }
 
 void loop() {
@@ -188,8 +258,63 @@ void wifiTask(void* parameter) {
   }
 }
 
+void writeLedPin(int pin, bool on) {
+  const uint8_t level = OPEN_LED_ACTIVE_LOW ? (on ? LOW : HIGH) : (on ? HIGH : LOW);
+  digitalWrite(pin, level);
+}
+
+void writeThreeBlueLeds(bool on) {
+  writeLedPin(WIFI_LED_PIN, on);
+  for (int i = 0; i < OPEN_LED_COUNT; i++) {
+    writeLedPin(OPEN_LED_PINS[i], on);
+  }
+}
+
+void applyOpenLeds() {
+  if (openLedsEnabled) {
+    writeThreeBlueLeds(true);
+  } else {
+    for (int i = 0; i < OPEN_LED_COUNT; i++) {
+      writeLedPin(OPEN_LED_PINS[i], false);
+    }
+    writeLedPin(WIFI_LED_PIN, WiFi.status() == WL_CONNECTED);
+  }
+}
+
 void updateWifiLed() {
-  digitalWrite(WIFI_LED, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
+  if (openLedsEnabled || alarmLedsOverride) return;
+  writeLedPin(WIFI_LED_PIN, WiFi.status() == WL_CONNECTED);
+}
+
+void writeAllOpenLeds(bool on) {
+  writeThreeBlueLeds(on);
+}
+
+void setOpenLeds(bool on) {
+  openLedsEnabled = on;
+  if (!alarmLedsOverride) {
+    applyOpenLeds();
+  }
+}
+
+void setAlarmLedsSolid(bool on) {
+  alarmLedsOverride = on;
+  writeThreeBlueLeds(on || openLedsEnabled);
+  if (!on) {
+    alarmLedsOverride = false;
+    applyOpenLeds();
+  }
+}
+
+void blinkAlarmLeds() {
+  alarmLedsOverride = true;
+  blueBlinkState = !blueBlinkState;
+  writeAllOpenLeds(blueBlinkState);
+}
+
+void restoreOpenLedsAfterAlarm() {
+  alarmLedsOverride = false;
+  applyOpenLeds();
 }
 
 // ================= MQTT ↔ server ↔ dashboard =================
@@ -206,16 +331,22 @@ void maintainMqtt() {
   lastMqttRetryMs = now;
 
   String clientId = String("ESP32_") + DEVICE_ID + "_" + String((uint32_t)esp_random(), HEX);
-  Serial.print("[MQTT] Connecting as ");
+  Serial.print("[MQTT] Connecting to ");
+  Serial.print(MQTT_SERVER);
+  Serial.print(" as ");
   Serial.println(clientId);
 
   if (mqtt.connect(clientId.c_str())) {
     mqtt.subscribe(TOPIC_COMMAND.c_str());
     Serial.println("[MQTT] Connected — subscribed to command topic");
     publishStatus();
+    publishGps();
+    lastStatusPublishMs = now;
+    lastGpsPublishMs = now;
   } else {
     Serial.print("[MQTT] Failed rc=");
-    Serial.println(mqtt.state());
+    Serial.print(mqtt.state());
+    Serial.println(" — retrying…");
   }
 }
 
@@ -228,12 +359,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("[MQTT] CMD: ");
   Serial.println(msg);
 
-  // {"command":"unlock"|"lock"|"alarm", ...}
-  if (strstr(msg, "\"unlock\"")) {
+  // {"command":"unlock"|"lock"|"alarm", ...} — match command field exactly (avoid "unlock" matching "lock")
+  if (strstr(msg, "\"command\":\"unlock\"") || strstr(msg, "\"command\": \"unlock\"")) {
     handleRemoteUnlock();
-  } else if (strstr(msg, "\"lock\"")) {
+  } else if (strstr(msg, "\"command\":\"lock\"") || strstr(msg, "\"command\": \"lock\"")) {
     handleRemoteLock();
-  } else if (strstr(msg, "\"alarm\"")) {
+  } else if (strstr(msg, "\"command\":\"alarm\"") || strstr(msg, "\"command\": \"alarm\"")) {
     bool active = true;
     if (strstr(msg, "\"active\":false") || strstr(msg, "\"active\": false")) {
       active = false;
@@ -242,27 +373,46 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+void setLockRelay(bool unlocked) {
+  const bool energize = unlocked ? RELAY_ENERGIZE_TO_UNLOCK : !RELAY_ENERGIZE_TO_UNLOCK;
+  const uint8_t level = RELAY_MODULE_ACTIVE_LOW
+    ? (energize ? LOW : HIGH)
+    : (energize ? HIGH : LOW);
+  digitalWrite(RELAY_LOCK_PIN, level);
+  Serial.print("[RELAY] ");
+  Serial.print(unlocked ? "UNLOCKED" : "LOCKED");
+  Serial.print(" pin=");
+  Serial.println(level == LOW ? "LOW" : "HIGH");
+}
+
 void handleRemoteUnlock() {
-  Serial.println("[MQTT] Unlock from dashboard — press button within 60s");
-  remoteUnlockWindow = true;
-  currentState = COMMAND_VALID;
-  commandTimestamp = millis();
-  // Use longer window for remote unlock
-  blinkCount = 8;
-  ledState = true;
-  digitalWrite(LED_INDICATOR_PIN, HIGH);
-  blinkTimestamp = millis();
+  // Dashboard / customer token unlock → open and stay open until physical button (or remote lock)
+  Serial.println("[MQTT] Unlock from dashboard — 3 blue LEDs ON, open until button locks");
+  remoteUnlockWindow = false;
+  holdUnlocked = true;
+  blinkCount = 0;
+  currentState = LOCK_OPEN;
+  lockOpenTimestamp = millis();
+  lastButtonMs = millis(); // ignore button bounce right after unlock
+  setLockRelay(true);
+  setOpenLeds(true);
+  publishStatus();
+}
+
+void lockBoxPhysical(const char* reason) {
+  Serial.print("[LOCK] ");
+  Serial.println(reason);
+  remoteUnlockWindow = false;
+  holdUnlocked = false;
+  currentState = IDLE;
+  blinkCount = 0;
+  setLockRelay(false);
+  setOpenLeds(false);
   publishStatus();
 }
 
 void handleRemoteLock() {
-  Serial.println("[MQTT] Lock from dashboard");
-  remoteUnlockWindow = false;
-  currentState = IDLE;
-  blinkCount = 0;
-  digitalWrite(RELAY_LOCK_PIN, LOW);
-  digitalWrite(LED_INDICATOR_PIN, LOW);
-  publishStatus();
+  lockBoxPhysical("Lock from dashboard");
 }
 
 void handleRemoteAlarm(bool active) {
@@ -270,22 +420,22 @@ void handleRemoteAlarm(bool active) {
   if (active) {
     Serial.println("[MQTT] Alarm ON from dashboard");
     digitalWrite(BUZZER_PIN, HIGH);
-    digitalWrite(RED_LED_PIN, HIGH);
+    setAlarmLedsSolid(true);
   } else {
     Serial.println("[MQTT] Alarm OFF from dashboard");
     digitalWrite(BUZZER_PIN, LOW);
-    digitalWrite(RED_LED_PIN, LOW);
     shockAlarmActive = false;
+    restoreOpenLedsAfterAlarm();
   }
   publishStatus();
 }
 
 void publishGps() {
   if (!gps.location.isValid()) return;
-  char payload[96];
+  char payload[128];
   snprintf(payload, sizeof(payload),
-           "{\"latitude\":%.6f,\"longitude\":%.6f}",
-           gps.location.lat(), gps.location.lng());
+           "{\"latitude\":%.6f,\"longitude\":%.6f,\"satellites\":%u,\"fix\":true}",
+           gps.location.lat(), gps.location.lng(), (unsigned)gps.satellites.value());
   mqtt.publish(TOPIC_GPS.c_str(), payload);
 }
 
@@ -296,26 +446,49 @@ void publishTamper(bool tampered) {
   mqtt.publish(TOPIC_TAMPER.c_str(), payload);
 }
 
-void publishShock(int32_t magnitude) {
+void publishShock(int32_t magnitude, bool isTouch) {
   if (!mqtt.connected()) return;
-  // magnitude scaled for dashboard (> 0.7 triggers alert path too)
+  unsigned long now = millis();
+  if (now - lastShockPublishMs < SHOCK_COOLDOWN_MS) {
+    Serial.println("[SHOCK] Cooldown — alert already sent recently");
+    return;
+  }
+  lastShockPublishMs = now;
   float mag = magnitude / 10000.0f;
-  char payload[64];
-  snprintf(payload, sizeof(payload), "{\"shock\":true,\"magnitude\":%.2f}", mag);
+  char payload[128];
+  snprintf(payload, sizeof(payload),
+           "{\"shock\":true,\"touch\":%s,\"magnitude\":%.2f,\"raw\":%ld}",
+           isTouch ? "true" : "false", mag, (long)magnitude);
   mqtt.publish(TOPIC_SHOCK.c_str(), payload);
+  Serial.println(isTouch ? "[SHOCK] Published (legacy touch flag)" : "[SHOCK] Published to dashboard");
+}
+
+void publishShockClear() {
+  if (!mqtt.connected()) return;
+  char payload[32];
+  snprintf(payload, sizeof(payload), "{\"shock\":false}");
+  mqtt.publish(TOPIC_SHOCK.c_str(), payload);
+  Serial.println("[SHOCK] Cleared on dashboard");
 }
 
 void publishStatus() {
   if (!mqtt.connected()) return;
   bool unlocked = (currentState == LOCK_OPEN);
   bool buzzer = digitalRead(BUZZER_PIN) == HIGH;
-  bool led = digitalRead(RED_LED_PIN) == HIGH || digitalRead(LED_INDICATOR_PIN) == HIGH;
-  char payload[128];
+  bool statusLedOn = openLedsEnabled || currentState == COMMAND_VALID || alarmLedsOverride;
+  bool led = statusLedOn;
+  bool fix = gps.location.isValid();
+  uint32_t sats = gps.satellites.isValid() ? gps.satellites.value() : 0;
+  char payload[192];
   snprintf(payload, sizeof(payload),
-           "{\"lock_status\":\"%s\",\"buzzer\":%s,\"led\":%s,\"wifi\":true}",
+           "{\"lock_status\":\"%s\",\"buzzer\":%s,\"led\":%s,\"wifi\":true,"
+           "\"gps_fix\":%s,\"satellites\":%u,\"gps_bytes\":%lu}",
            unlocked ? "unlocked" : "locked",
            buzzer ? "true" : "false",
-           led ? "true" : "false");
+           led ? "true" : "false",
+           fix ? "true" : "false",
+           (unsigned)sats,
+           (unsigned long)gpsBytesWindow);
   mqtt.publish(TOPIC_STATUS.c_str(), payload);
 }
 
@@ -331,7 +504,8 @@ void handleSerialInput() {
         commandTimestamp = millis();
         blinkCount = 4;
         ledState = true;
-        digitalWrite(LED_INDICATOR_PIN, ledState);
+        alarmLedsOverride = true;
+        writeAllOpenLeds(ledState);
         blinkTimestamp = millis();
       } else {
         Serial.println("[WARN] System already primed or locker currently open.");
@@ -340,10 +514,15 @@ void handleSerialInput() {
   }
 }
 
-// 2. Authorization + lock
+// 2. Authorization + lock (physical button locks when open)
 void handleSystemState() {
   unsigned long currentMillis = millis();
   unsigned long timeout = remoteUnlockWindow ? REMOTE_UNLOCK_MS : CMD_TIMEOUT_MS;
+  bool buttonPressed = digitalRead(BUTTON_PIN) == LOW
+    && (currentMillis - lastButtonMs >= BUTTON_DEBOUNCE_MS);
+  bool closeButtonPressed = (CLOSE_BUTTON_PIN >= 0)
+    && digitalRead(CLOSE_BUTTON_PIN) == LOW
+    && (currentMillis - lastCloseButtonMs >= BUTTON_DEBOUNCE_MS);
 
   switch (currentState) {
     case IDLE:
@@ -354,28 +533,38 @@ void handleSystemState() {
         Serial.println("[TIMEOUT] Unlock window expired. IDLE.");
         currentState = IDLE;
         remoteUnlockWindow = false;
-        digitalWrite(LED_INDICATOR_PIN, LOW);
+        alarmLedsOverride = false;
+        setOpenLeds(false);
         blinkCount = 0;
         publishStatus();
-      } else if (digitalRead(BUTTON_PIN) == LOW) {
+      } else if (buttonPressed) {
+        lastButtonMs = currentMillis;
         Serial.println("[ACCESS] Button pressed. Opening locker for 5 seconds.");
+        holdUnlocked = false;
         currentState = LOCK_OPEN;
         lockOpenTimestamp = currentMillis;
         remoteUnlockWindow = false;
         blinkCount = 0;
-        digitalWrite(RELAY_LOCK_PIN, HIGH);
-        digitalWrite(LED_INDICATOR_PIN, HIGH);
+        alarmLedsOverride = false;
+        setLockRelay(true);
+        setOpenLeds(true);
         publishStatus();
       }
       break;
 
     case LOCK_OPEN:
-      if (currentMillis - lockOpenTimestamp >= LOCK_OPEN_MS) {
-        Serial.println("[LOCK] 5 seconds expired. Locking.");
-        digitalWrite(RELAY_LOCK_PIN, LOW);
-        digitalWrite(LED_INDICATOR_PIN, LOW);
-        currentState = IDLE;
-        publishStatus();
+      // GPIO27 or GPIO32 → lock after token unlock / dashboard open
+      if (buttonPressed || closeButtonPressed) {
+        if (buttonPressed) lastButtonMs = currentMillis;
+        if (closeButtonPressed) lastCloseButtonMs = currentMillis;
+        lockBoxPhysical(closeButtonPressed && !buttonPressed
+          ? "Close button (GPIO32) — locking box"
+          : "Physical button (GPIO27) — locking box");
+        break;
+      }
+      // Local short open (serial 'o' + button) still auto-locks after LOCK_OPEN_MS
+      if (!holdUnlocked && currentMillis - lockOpenTimestamp >= LOCK_OPEN_MS) {
+        lockBoxPhysical("5 seconds expired — locking");
       }
       break;
   }
@@ -387,7 +576,8 @@ void handleBlinking() {
     if (currentMillis - blinkTimestamp >= BLINK_INTERVAL) {
       blinkTimestamp = currentMillis;
       ledState = !ledState;
-      digitalWrite(LED_INDICATOR_PIN, ledState);
+      alarmLedsOverride = true;
+      writeAllOpenLeds(ledState);
       blinkCount--;
     }
   }
@@ -408,6 +598,8 @@ void readMPU(int16_t &ax, int16_t &ay, int16_t &az) {
 void checkShockSensor() {
   unsigned long currentMillis = millis();
 
+  if (currentMillis < MPU_SETTLE_MS) return;
+
   if (currentMillis - lastMpuReadTimestamp >= MPU_SAMPLE_MS) {
     lastMpuReadTimestamp = currentMillis;
 
@@ -417,33 +609,68 @@ void checkShockSensor() {
     int32_t dx = abs(currentX - lastX);
     int32_t dy = abs(currentY - lastY);
     int32_t dz = abs(currentZ - lastZ);
-    int32_t combinedForce = dx + dy + dz;
+    int32_t peakDelta = dx;
+    if (dy > peakDelta) peakDelta = dy;
+    if (dz > peakDelta) peakDelta = dz;
 
     lastX = currentX;
     lastY = currentY;
     lastZ = currentZ;
 
-    if (combinedForce > SHOCK_THRESHOLD && currentState != LOCK_OPEN && !shockAlarmActive) {
-      Serial.print("[SHOCK] Detected! Value: ");
-      Serial.println(combinedForce);
-      shockAlarmActive = true;
-      shockTimestamp = currentMillis;
-      publishShock(combinedForce);
+    bool boxClosed = (digitalRead(IR_SENSOR_PIN) == LOW);
+    bool canDetect = boxClosed
+      && currentState != LOCK_OPEN
+      && !remoteAlarmActive
+      && (currentMillis - lastShockPublishMs >= SHOCK_COOLDOWN_MS);
+
+    uint8_t axesHigh = 0;
+    if (dx >= SHOCK_AXIS_MIN) axesHigh++;
+    if (dy >= SHOCK_AXIS_MIN) axesHigh++;
+    if (dz >= SHOCK_AXIS_MIN) axesHigh++;
+
+    if (peakDelta >= SHOCK_DEBUG_THRESHOLD && peakDelta < SHOCK_THRESHOLD) {
+      Serial.print("[MPU] below threshold peak=");
+      Serial.print(peakDelta);
+      Serial.print(" axes=");
+      Serial.println(axesHigh);
+    }
+
+    bool isShockHit = peakDelta >= SHOCK_THRESHOLD && axesHigh >= 2;
+
+    if (isShockHit && canDetect) {
+      shockConfirmCount++;
+      if (shockConfirmCount >= SHOCK_CONFIRM_READS) {
+        Serial.print("[SHOCK] Impact confirmed peak=");
+        Serial.print(peakDelta);
+        Serial.print(" axes=");
+        Serial.println(axesHigh);
+        shockAlarmActive = true;
+        shockTimestamp = currentMillis;
+        shockConfirmCount = 0;
+        digitalWrite(BUZZER_PIN, HIGH);
+        setAlarmLedsSolid(true);
+        publishShock(peakDelta, false);
+      }
+    } else if (peakDelta < SHOCK_THRESHOLD / 4) {
+      shockConfirmCount = 0;
     }
   }
 
   if (shockAlarmActive && !remoteAlarmActive) {
     if (currentMillis - shockTimestamp < SHOCK_ALARM_MS) {
-      digitalWrite(RED_LED_PIN, HIGH);
+      setAlarmLedsSolid(true);
       if (digitalRead(IR_SENSOR_PIN) == LOW) {
         digitalWrite(BUZZER_PIN, HIGH);
       }
     } else {
       shockAlarmActive = false;
-      digitalWrite(RED_LED_PIN, LOW);
-      if (digitalRead(IR_SENSOR_PIN) == LOW) {
-        digitalWrite(BUZZER_PIN, LOW);
+      if (!lastTamperPublished) {
+        restoreOpenLedsAfterAlarm();
+        if (digitalRead(IR_SENSOR_PIN) == LOW) {
+          digitalWrite(BUZZER_PIN, LOW);
+        }
       }
+      publishShockClear();
       publishStatus();
     }
   }
@@ -456,17 +683,16 @@ void monitorAndSecureBox() {
 
   if (remoteAlarmActive) {
     digitalWrite(BUZZER_PIN, HIGH);
-    digitalWrite(RED_LED_PIN, HIGH);
+    setAlarmLedsSolid(true);
   } else if (!isBoxClosed && !isAuthorizedOpen) {
     digitalWrite(BUZZER_PIN, HIGH);
     if (currentMillis - redBlinkTimestamp >= RAPID_BLINK) {
       redBlinkTimestamp = currentMillis;
-      redLedState = !redLedState;
-      digitalWrite(RED_LED_PIN, redLedState);
+      blinkAlarmLeds();
     }
-  } else if (isBoxClosed && !shockAlarmActive) {
+  } else if (isBoxClosed && !shockAlarmActive && !lastTamperPublished) {
     digitalWrite(BUZZER_PIN, LOW);
-    digitalWrite(RED_LED_PIN, LOW);
+    restoreOpenLedsAfterAlarm();
   }
 
   if (isBoxClosed != lastIrState) {
@@ -476,13 +702,16 @@ void monitorAndSecureBox() {
       if (lastTamperPublished) {
         publishTamper(false);
         lastTamperPublished = false;
+        restoreOpenLedsAfterAlarm();
       }
       publishStatus();
     } else {
       if (isAuthorizedOpen) {
         Serial.println("[SENSOR] Box Status: OPENED (Authorized)");
       } else {
-        Serial.println("[ALERT] UNAUTHORIZED OPEN!");
+        Serial.println("[ALERT] UNAUTHORIZED OPEN — no valid token!");
+        digitalWrite(BUZZER_PIN, HIGH);
+        setAlarmLedsSolid(true);
         publishTamper(true);
         lastTamperPublished = true;
       }
@@ -493,21 +722,54 @@ void monitorAndSecureBox() {
 
 void updateGpsData() {
   while (gpsSerial.available() > 0) {
-    gps.encode(gpsSerial.read());
+    char c = gpsSerial.read();
+    gps.encode(c);
+    gpsBytesTotal++;
+    gpsBytesWindow++;
+    lastGpsByteMs = millis();
   }
 
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastGpsPrintTimestamp >= GPS_PRINT_MS) {
-    lastGpsPrintTimestamp = currentMillis;
+  unsigned long now = millis();
+  if (now - gpsWindowStartMs >= 10000) {
+    gpsBytesWindow = 0;
+    gpsWindowStartMs = now;
+  }
+
+  if (gpsBytesTotal == 0 && now > 30000 && !gpsWiringWarned) {
+    gpsWiringWarned = true;
+    Serial.println("[GPS] NO serial data — check wiring:");
+    Serial.println("       GPS TX wire → ESP32 GPIO16 (RX2)");
+    Serial.println("       GPS RX wire → ESP32 GPIO17 (TX2)");
+    Serial.println("       VCC 3.3V (not 5V unless module supports it), GND shared");
+    Serial.println("       Move box outdoors — indoor = 0 satellites");
+  }
+
+  if (gpsBytesWindow == 0 && now - lastGpsBaudTryMs >= GPS_BAUD_RETRY_MS && now > 25000) {
+    Serial.println("[GPS] No NMEA bytes — trying next baud rate…");
+    tryNextGpsBaud();
+  }
+
+  if (now - lastGpsPrintTimestamp >= GPS_PRINT_MS) {
+    lastGpsPrintTimestamp = now;
+    uint32_t sats = gps.satellites.isValid() ? gps.satellites.value() : 0;
     Serial.print("[GPS] Satellites: ");
-    Serial.print(gps.satellites.value());
+    Serial.print(sats);
+    Serial.print(" | NMEA bytes/10s: ");
+    Serial.print(gpsBytesWindow);
     if (gps.location.isValid()) {
-      Serial.print(" | Lat: ");
+      Serial.print(" | FIX OK Lat: ");
       Serial.print(gps.location.lat(), 6);
-      Serial.print(" | Lon: ");
+      Serial.print(" Lon: ");
       Serial.println(gps.location.lng(), 6);
+    } else if (gpsBytesWindow == 0) {
+      Serial.println(" | NO GPS data — check TX/RX wires and power");
+    } else if (sats == 0) {
+      Serial.println(" | Module OK — waiting for sky view (go outdoors)");
     } else {
-      Serial.println(" | Searching for satellite fix...");
+      Serial.println(" | Acquiring fix… keep module facing open sky");
     }
   }
 }
+
+
+

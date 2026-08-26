@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import {
-  Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle,
-} from 'lucide-react';
+import { Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api';
-import { googleMapsDirectionsUrl } from '../lib/mapConfig';
+import { formatLockStatusLabel, isBoxOpen } from '../lib/deliveryUtils';
+import { MAP_LABELS } from '../lib/mapConfig';
 import CustomerTokenMessage from './CustomerTokenMessage';
+import RiderRouteMap from './RiderRouteMap';
 
 export default function CustomerUnlockPanel({
   delivery,
@@ -20,15 +20,24 @@ export default function CustomerUnlockPanel({
   const [unlocking, setUnlocking] = useState(false);
   const [locking, setLocking] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [requesting, setRequesting] = useState(false);
 
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
+  const tokenExpired = Boolean(delivery.token_expires_at)
+    && new Date(delivery.token_expires_at) < new Date();
   const tokenConsumed = Boolean(delivery.token_closed_at) || !delivery.unlock_token;
-  const boxOpened = Boolean(delivery.token_used_at) && !tokenConsumed;
-  const canEnterToken = isReady && delivery.unlock_token && !delivery.token_used_at && !tokenConsumed;
+  const boxOpened = Boolean(delivery.token_used_at) && !tokenConsumed && !tokenExpired;
+  const canEnterToken = isReady && delivery.unlock_token && !delivery.token_used_at && !tokenConsumed && !tokenExpired;
   const canOpen = canEnterToken;
-  const canClose = isReady && boxOpened;
+  const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
-  const deviceLocked = delivery.device?.lock_status !== 'unlocked';
+  const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token;
+  const canRequestNewToken = isReady
+    && delivery.device_id
+    && (tokenConsumed || tokenExpired || !delivery.unlock_token)
+    && !delivery.token_requested_at;
+  const boxIsOpen = delivery.device ? isBoxOpen(delivery.device.lock_status) : false;
+  const lockLabel = delivery.device ? formatLockStatusLabel(delivery.device.lock_status) : null;
 
   useEffect(() => {
     setTokenInput('');
@@ -44,7 +53,7 @@ export default function CustomerUnlockPanel({
     onError?.('');
     try {
       await api.unlockWithToken(authToken, delivery.id, code);
-      onSuccess?.('Smart Box opened');
+      onSuccess?.('Smart Box opened — press a button on the box or tap Close below when done');
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);
@@ -58,12 +67,26 @@ export default function CustomerUnlockPanel({
     onError?.('');
     try {
       await api.customerLockDelivery(authToken, delivery.id);
-      onSuccess?.('Smart Box closed — code used');
+      onSuccess?.('Smart Box closed — your code is used. Request a new code from manager if you need to open again.');
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);
     } finally {
       setLocking(false);
+    }
+  };
+
+  const handleRequestToken = async () => {
+    setRequesting(true);
+    onError?.('');
+    try {
+      const result = await api.requestDeliveryToken(authToken, delivery.id);
+      onSuccess?.(result?.message || 'Opening request sent — manager will approve so you can open the box again');
+      await onUpdated?.();
+    } catch (err) {
+      onError?.(err.message);
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -83,14 +106,9 @@ export default function CustomerUnlockPanel({
 
   if (!isReady && delivery.status !== 'delivered') return null;
 
-  const mapsUrl = delivery.delivery_latitude != null
-    ? googleMapsDirectionsUrl(delivery.delivery_latitude, delivery.delivery_longitude)
-    : null;
-
   return (
     <div className="space-y-4">
-      {/* Step 1 — Token message from manager */}
-      {delivery.unlock_token && !tokenConsumed && (
+      {delivery.unlock_token && !tokenConsumed && !tokenExpired && (
         <CustomerTokenMessage
           delivery={delivery}
           customerName={customerName}
@@ -100,52 +118,89 @@ export default function CustomerUnlockPanel({
         />
       )}
 
-      {/* Where to open */}
-      <div className="p-4 rounded-xl bg-surface border border-border space-y-2">
+      <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
         <p className="text-xs font-bold uppercase tracking-wider text-primary-light flex items-center gap-1.5">
           <MapPin className="w-3.5 h-3.5" />
           Step 1 — Go to delivery location (B)
         </p>
         <p className="text-sm text-slate-200 leading-snug break-words">{delivery.delivery_address}</p>
-        {mapsUrl && (
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex text-xs font-medium text-primary-light hover:underline"
-          >
-            Open directions in Google Maps
-          </a>
+        {delivery.delivery_latitude != null && delivery.delivery_longitude != null && (
+          <div className="rounded-xl overflow-hidden border border-border">
+            <RiderRouteMap delivery={delivery} height="min(240px, 42vh)" live />
+          </div>
         )}
+        <p className="text-[11px] text-slate-500">
+          Box GPS and your location on the same map.
+        </p>
       </div>
 
-      {/* Open / close controls */}
       <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-sm font-bold text-white">Smart Box controls</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              One-time code — open once, close when done, code expires after close
+              Open with your code. Close with either button on the box, or tap Close below.
             </p>
           </div>
-          {delivery.device && (
-            <span className="text-xs text-slate-400 font-mono shrink-0">
+          {delivery.device && lockLabel && (
+            <span className={`text-xs font-mono shrink-0 ${boxIsOpen ? 'text-success' : 'text-slate-400'}`}>
               {delivery.device.device_id}
               {' · '}
-              {deviceLocked ? 'Locked' : 'Open'}
+              {lockLabel}
             </span>
           )}
         </div>
 
-        {tokenConsumed && (
+        {tokenExpired && !tokenConsumed && (
+          <div className="p-3 rounded-lg bg-warning/10 border border-warning/25 flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-warning">Unlock code expired</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Tap Request box opening — a manager will approve and send a new code.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {tokenConsumed && !tokenRequestPending && (
           <div className="p-3 rounded-lg bg-success/10 border border-success/25 flex items-start gap-2">
             <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-success">Unlock code used</p>
               <p className="text-xs text-slate-400 mt-1">
-                You closed the Smart Box. This code cannot be used again (one-time only).
+                Need to open again? Request a new code — manager will confirm first.
               </p>
             </div>
+          </div>
+        )}
+
+        {tokenRequestPending && (
+          <div className="p-3 rounded-lg bg-warning/10 border border-warning/25 flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-warning">Opening request pending</p>
+              <p className="text-xs text-slate-400 mt-1">
+                You asked to open the Smart Box again. A manager will approve and send a new code to your dashboard.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {canRequestNewToken && (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={handleRequestToken}
+              disabled={requesting}
+              className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+              Request box opening
+            </button>
+            <p className="text-[11px] text-slate-500 text-center">
+              Separate from payment — manager approves opening the Smart Box again.
+            </p>
           </div>
         )}
 
@@ -185,7 +240,7 @@ export default function CustomerUnlockPanel({
             </p>
             <p className="text-xs text-slate-400 flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              Step 3 — When finished, close the box. Your code will expire and cannot be reused.
+              Step 3 — Press either button on the box to lock, or tap Close below.
             </p>
             <button
               type="button"

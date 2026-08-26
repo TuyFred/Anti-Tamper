@@ -4,6 +4,7 @@ import {
   Truck, Loader2, Radio, MapPin,
 } from 'lucide-react';
 import { formatPrice } from '../lib/deliveryUtils';
+import DeliveryContactBlock from './DeliveryContactBlock';
 
 const STEPS = [
   { key: 'awaiting_payment', label: 'Pay', icon: CreditCard },
@@ -67,17 +68,28 @@ export default function DeliveryPaymentStep({
   const isPaid = ['payment_verified', 'rider_assigned', 'in_transit', 'delivered'].includes(delivery.status);
 
   if (isPaid) {
+    const showRider = delivery.rider && ['rider_assigned', 'in_transit', 'delivered'].includes(delivery.status);
     return (
-      <div className="p-3 rounded-xl bg-success/10 border border-success/30 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-success flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" />
-          Paid
-        </p>
-        {['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status) && (
-          <Link to="/tracking" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-light hover:underline">
-            <Radio className="w-3.5 h-3.5" />
-            Track
-          </Link>
+      <div className="space-y-3">
+        <div className="p-3 rounded-xl bg-success/10 border border-success/30 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-success flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Paid
+          </p>
+          {['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status) && (
+            <Link to="/tracking" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-light hover:underline">
+              <Radio className="w-3.5 h-3.5" />
+              Track
+            </Link>
+          )}
+        </div>
+        {showRider && (
+          <DeliveryContactBlock title="Assigned rider" person={delivery.rider} variant="rider" />
+        )}
+        {delivery.status === 'payment_verified' && !delivery.rider && (
+          <p className="text-xs text-slate-400 p-2.5 rounded-lg bg-surface border border-border">
+            Payment confirmed — a rider will be assigned soon. You will see their contact here.
+          </p>
         )}
       </div>
     );
@@ -101,6 +113,7 @@ export default function DeliveryPaymentStep({
       <p className="text-sm font-semibold text-white">
         Pay {formatPrice(delivery.calculated_price, delivery.currency)}
       </p>
+      <p className="text-[11px] text-slate-500">Choose MoMo or Bank, pay outside the app, then upload proof below.</p>
 
       <div className="flex gap-2">
         <button

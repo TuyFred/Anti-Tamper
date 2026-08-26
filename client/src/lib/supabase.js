@@ -5,10 +5,24 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim?.() || impo
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
-    'Missing Supabase environment variables. In Vercel → Project → Settings → Environment Variables, '
-    + 'add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (from Supabase Dashboard → Project Settings → API), '
-    + 'then redeploy the project.',
+    'Missing Supabase environment variables. Copy client/.env.example to client/.env and set '
+    + 'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY from Supabase Dashboard → Project Settings → API.',
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+});
+
+/** Clear broken session when Supabase host is unreachable (stops refresh_token spam). */
+export async function clearStaleAuthSession() {
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    /* ignore */
+  }
+}

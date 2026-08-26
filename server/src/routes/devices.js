@@ -7,7 +7,7 @@ import {
   requirePermission,
 } from '../middleware/auth.js';
 import { getAccessibleDevices, canAccessDevice } from '../middleware/permissions.js';
-import { sendDeviceCommand, createUnauthorizedAlert } from '../mqtt/handler.js';
+import { sendDeviceCommand, createUnauthorizedAlert, broadcastDeviceUpdate } from '../mqtt/handler.js';
 
 const router = Router();
 
@@ -60,9 +60,11 @@ router.post('/', authenticate, requireApproved, requireAdmin, async (req, res) =
     return res.status(400).json({ error: 'device_id and name are required' });
   }
 
+  const normalizedId = String(device_id).trim().toUpperCase();
+
   const { data, error } = await supabase
     .from('devices')
-    .insert({ device_id, name, description })
+    .insert({ device_id: normalizedId, name, description })
     .select()
     .single();
 
@@ -70,17 +72,47 @@ router.post('/', authenticate, requireApproved, requireAdmin, async (req, res) =
   res.status(201).json(data);
 });
 
+router.patch('/:deviceId', authenticate, requireApproved, requireAdmin, async (req, res) => {
+  const { deviceId } = req.params;
+  const { device_id, name, description, latitude, longitude, clear_location } = req.body;
+
+  const updates = { updated_at: new Date().toISOString() };
+  if (name !== undefined) updates.name = name?.trim() || name;
+  if (description !== undefined) updates.description = description;
+  if (device_id !== undefined) {
+    const normalized = String(device_id).trim().toUpperCase();
+    if (!normalized) {
+      return res.status(400).json({ error: 'device_id cannot be empty' });
+    }
+    updates.device_id = normalized;
+  }
+  if (clear_location) {
+    updates.latitude = null;
+    updates.longitude = null;
+  } else {
+    if (latitude !== undefined) updates.latitude = latitude;
+    if (longitude !== undefined) updates.longitude = longitude;
+  }
+
+  const { data, error } = await supabase
+    .from('devices')
+    .update(updates)
+    .eq('id', deviceId)
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'That hardware ID is already registered' });
+    }
+    return res.status(500).json({ error: error.message });
+  }
+  if (!data) return res.status(404).json({ error: 'Device not found' });
+  res.json(data);
+});
+
 router.post('/:deviceId/unlock', authenticate, requireApproved, async (req, res) => {
   const { deviceId } = req.params;
-
-  if (!req.profile.is_approved) {
-    const { data: device } = await supabase.from('devices').select('*').eq('id', deviceId).single();
-    if (device) {
-      await createUnauthorizedAlert(device, req.user.id);
-      sendDeviceCommand(device.device_id, 'alarm', { reason: 'unauthorized' });
-    }
-    return res.status(403).json({ error: 'Account not approved', code: 'PENDING_APPROVAL' });
-  }
 
   const canControl = await canAccessDevice(req.user.id, deviceId, true);
   if (!canControl) {
@@ -100,19 +132,30 @@ router.post('/:deviceId/unlock', authenticate, requireApproved, async (req, res)
 
   if (error || !device) return res.status(404).json({ error: 'Device not found' });
 
-  sendDeviceCommand(device.device_id, 'unlock', { authorized: true, user_id: req.user.id });
+  try {
+    sendDeviceCommand(device.device_id, 'unlock', { authorized: true, user_id: req.user.id });
+  } catch (err) {
+    return res.status(503).json({
+      error: err.message || 'MQTT offline — cannot unlock. Check MQTT_BROKER_URL and ESP32 connection.',
+    });
+  }
+  const updatedAt = new Date().toISOString();
   await supabase
     .from('devices')
-    .update({ lock_status: 'unlocked', updated_at: new Date().toISOString() })
+    .update({ lock_status: 'unlocked', updated_at: updatedAt })
     .eq('id', deviceId);
 
-  res.json({ success: true, message: 'Unlock command sent' });
+  broadcastDeviceUpdate({ ...device, lock_status: 'unlocked', updated_at: updatedAt, is_online: true });
+
+  res.json({ success: true, message: 'Unlock command sent — box should open now' });
 });
 
 router.post('/:deviceId/lock', authenticate, requireApproved, async (req, res) => {
   const { deviceId } = req.params;
   const canControl = await canAccessDevice(req.user.id, deviceId, true);
-  if (!canControl) return res.status(403).json({ error: 'No control permission' });
+  if (!canControl) {
+    return res.status(403).json({ error: 'Only admins and managers can lock boxes remotely' });
+  }
 
   const { data: device, error } = await supabase
     .from('devices')
@@ -122,20 +165,32 @@ router.post('/:deviceId/lock', authenticate, requireApproved, async (req, res) =
 
   if (error || !device) return res.status(404).json({ error: 'Device not found' });
 
-  sendDeviceCommand(device.device_id, 'lock');
+  try {
+    sendDeviceCommand(device.device_id, 'lock');
+  } catch (err) {
+    return res.status(503).json({
+      error: err.message || 'MQTT offline — cannot lock. Check MQTT_BROKER_URL and ESP32 connection.',
+    });
+  }
+
+  const updatedAt = new Date().toISOString();
   await supabase
     .from('devices')
-    .update({ lock_status: 'locked', updated_at: new Date().toISOString() })
+    .update({ lock_status: 'locked', updated_at: updatedAt })
     .eq('id', deviceId);
 
-  res.json({ success: true, message: 'Lock command sent' });
+  broadcastDeviceUpdate({ ...device, lock_status: 'locked', updated_at: updatedAt, is_online: true });
+
+  res.json({ success: true, message: 'Lock command sent — box should close now' });
 });
 
 router.post('/:deviceId/alarm', authenticate, requireApproved, async (req, res) => {
   const { deviceId } = req.params;
   const { active = true } = req.body;
   const canControl = await canAccessDevice(req.user.id, deviceId, true);
-  if (!canControl) return res.status(403).json({ error: 'No control permission' });
+  if (!canControl) {
+    return res.status(403).json({ error: 'Only admins and managers can trigger alarms' });
+  }
 
   const { data: device, error } = await supabase
     .from('devices')

@@ -1,10 +1,11 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/supabase.js';
-
+import { sendViaBrevoApi, hasBrevoApiKey } from './brevo.js';
+import { formatDateTimeFull, formatEmailSentAt } from '../lib/datetime.js';
 const EVENT_LABELS = {
   tamper: { label: 'Tamper Detected', color: '#ef4444', emoji: '⚠️' },
-  shock: { label: 'Motion / Fall / Touch', color: '#f59e0b', emoji: '💥' },
-  unauthorized: { label: 'Unauthorized Access', color: '#dc2626', emoji: '🚫' },
+  shock: { label: 'Impact / Shock Detected', color: '#f59e0b', emoji: '💥' },
+  unauthorized: { label: 'Unauthorized Box Open', color: '#dc2626', emoji: '🚫' },
   gps: { label: 'GPS Alert', color: '#3b82f6', emoji: '📍' },
   system: { label: 'System Alert', color: '#64748b', emoji: '🔔' },
 };
@@ -36,16 +37,8 @@ function buildAlertEmailHtml(alert, device, dashboardUrl) {
   else if (alert.event_type === 'shock' && isTouch) meta.label = 'Box Touched / Moved';
   else if (alert.event_type === 'shock') meta.label = 'Impact / Shock';
   const severityColor = alert.severity === 'critical' ? '#ef4444' : '#f59e0b';
-  const timeStr = new Date(alert.created_at).toLocaleString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  });
-  const mapLink =
+  const eventTime = formatDateTimeFull(alert.created_at || new Date().toISOString());
+  const sentAt = formatEmailSentAt();  const mapLink =
     alert.latitude != null && alert.longitude != null
       ? `https://www.google.com/maps?q=${alert.latitude},${alert.longitude}`
       : null;
@@ -101,10 +94,9 @@ function buildAlertEmailHtml(alert, device, dashboardUrl) {
                   </td>
                   <td width="8"></td>
                   <td width="50%" style="padding:12px 16px;background:#0b1120;border-radius:10px;border:1px solid #1e2d4a;vertical-align:top;">
-                    <p style="margin:0 0 4px;color:#64748b;font-size:11px;">Time</p>
-                    <p style="margin:0;color:#f1f5f9;font-size:13px;">${timeStr}</p>
-                  </td>
-                </tr>
+                    <p style="margin:0 0 4px;color:#64748b;font-size:11px;">Event time (Rwanda)</p>
+                    <p style="margin:0;color:#f1f5f9;font-size:13px;line-height:1.5;">${escapeHtml(eventTime)}</p>
+                  </td>                </tr>
               </table>
               ${
                 mapLink
@@ -141,9 +133,9 @@ function buildAlertEmailHtml(alert, device, dashboardUrl) {
             <td style="padding:20px 32px;background:#0b1120;border-top:1px solid #1e2d4a;text-align:center;">
               <p style="margin:0;color:#475569;font-size:12px;line-height:1.6;">
                 This is an automated alert from <strong style="color:#64748b;">Anti-Tamper Smart Delivery Box</strong>.<br />
+                Email sent: ${escapeHtml(sentAt)} · Rwanda time (CAT)<br />
                 Do not reply to this email.
-              </p>
-            </td>
+              </p>            </td>
           </tr>
         </table>
       </td>
@@ -163,27 +155,73 @@ function escapeHtml(str) {
 }
 
 export async function sendAlertEmail(to, alert, device) {
-  const transport = getTransporter();
-  if (!transport) return false;
-
   const meta = EVENT_LABELS[alert.event_type] || EVENT_LABELS.system;
   const subject = `[${alert.severity?.toUpperCase()}] ${meta.emoji} ${meta.label} — ${device?.name || 'Delivery Box'}`;
+  const eventTime = formatDateTimeFull(alert.created_at || new Date().toISOString());
+  const sentAt = formatEmailSentAt();
 
-  try {
-    await transport.sendMail({
-      from: `"Anti-Tamper Alerts" <${config.email.from}>`,
-      to,
-      subject,
-      html: buildAlertEmailHtml(alert, device, config.clientUrl),
-      text: `${meta.label}\n\n${alert.message}\n\nDevice: ${device?.name} (${device?.device_id})\nTime: ${alert.created_at}\n\nView alerts: ${config.clientUrl}/alerts`,
-    });
-    return true;
-  } catch (err) {
-    console.error(`Email failed for ${to}:`, err.message);
-    return false;
-  }
+  const result = await sendMail({
+    to,
+    subject,
+    html: buildAlertEmailHtml(alert, device, config.clientUrl),
+    text: `${meta.label}\n\n${alert.message}\n\nDevice: ${device?.name} (${device?.device_id})\nEvent time (Rwanda): ${eventTime}\nEmail sent: ${sentAt}\n\nView alerts: ${config.clientUrl}/alerts`,
+  });
+  return result.ok;
 }
 
 export function isEmailConfigured() {
-  return config.email.enabled && config.email.host && config.email.user;
+  if (!config.email.enabled) return false;
+  return hasBrevoApiKey() && Boolean(config.email.from);
+}
+
+export function usesBrevoApi() {
+  return hasBrevoApiKey() && Boolean(config.email.from);
+}
+
+export async function sendMail({ to, subject, html, text }) {
+  if (!isEmailConfigured()) {
+    console.error('Email not configured — set BREVO_API_KEY + SMTP_FROM in server/.env');
+    return { ok: false, error: 'Email service not configured' };
+  }
+
+  if (hasBrevoApiKey()) {
+    try {
+      const sent = await sendViaBrevoApi({ to, subject, html, text });
+      console.log(`📧 Brevo API → ${to}: ${subject} (messageId: ${sent.messageId})`);
+      return { ok: true, provider: 'brevo-api', messageId: sent.messageId };
+    } catch (err) {
+      console.error(`Brevo API failed for ${to}:`, err.message);
+      const allowSmtpFallback = process.env.BREVO_ALLOW_SMTP_FALLBACK === 'true';
+      if (!allowSmtpFallback || !config.email.user || !config.email.pass) {
+        return { ok: false, error: err.message, provider: 'brevo-api' };
+      }
+      console.log('Falling back to Brevo SMTP (BREVO_ALLOW_SMTP_FALLBACK=true)...');
+    }
+  } else {
+    return {
+      ok: false,
+      error: 'BREVO_API_KEY missing — emails are sent only via the Brevo REST API',
+      provider: 'off',
+    };
+  }
+
+  const transport = getTransporter();
+  if (!transport) {
+    return { ok: false, error: 'SMTP transporter not available' };
+  }
+
+  try {
+    await transport.sendMail({
+      from: `"${config.email.fromName}" <${config.email.from}>`,
+      to,
+      subject,
+      html,
+      text,
+    });
+    console.log(`📧 SMTP → ${to}: ${subject}`);
+    return { ok: true };
+  } catch (err) {
+    console.error(`SMTP failed for ${to}:`, err.message);
+    return { ok: false, error: err.message };
+  }
 }

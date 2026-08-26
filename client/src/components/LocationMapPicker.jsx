@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { MapContainer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
-import { MapPin, Loader2 } from 'lucide-react';
+import { MapPin, Loader2, LocateFixed } from 'lucide-react';
 import L from 'leaflet';
-import { KIGALI_CENTER } from '../lib/rwandaAddress';
+import { KIGALI_CENTER, coordsFromRwandaAddress } from '../lib/geocode';
 import { MAP_LABELS } from '../lib/mapConfig';
 import { useReverseGeocode } from '../hooks/useReverseGeocode';
+import { useGeolocation } from '../hooks/useGeolocation';
 import AppMapTileLayer from './AppMapTileLayer';
 
 const pinIcon = (color) => new L.DivIcon({
@@ -29,7 +30,7 @@ function RecenterMap({ position }) {
     if (position) {
       map.flyTo([position.lat, position.lng], Math.max(map.getZoom(), 14), { duration: 0.6 });
     }
-  }, [position, map]);
+  }, [position?.lat, position?.lng, map]);
   return null;
 }
 
@@ -63,14 +64,52 @@ export default function LocationMapPicker({
   position,
   onChange,
   pinColor = '#3b82f6',
-  height = '220px',
+  height = 'min(260px, 45vh)',
+  rwandaAddress = null,
 }) {
-  const center = position ? [position.lat, position.lng] : KIGALI_CENTER;
+  const { position: myPos, loading: locating, error: geoError, startLiveWatch } = useGeolocation();
+
+  useEffect(() => {
+    startLiveWatch();
+  }, [startLiveWatch]);
+
+  const sectorFallback = rwandaAddress ? coordsFromRwandaAddress(rwandaAddress) : null;
+  const center = position
+    ? [position.lat, position.lng]
+    : (myPos ? [myPos.lat, myPos.lng] : (sectorFallback ? [sectorFallback.lat, sectorFallback.lng] : KIGALI_CENTER));
+
+  const handleUseMyLocation = () => {
+    startLiveWatch();
+    if (myPos) {
+      onChange({ lat: myPos.lat, lng: myPos.lng });
+    }
+  };
+
+  // First GPS fix only — do not overwrite a pin the user placed on the map
+  useEffect(() => {
+    if (myPos && !position) {
+      onChange({ lat: myPos.lat, lng: myPos.lng });
+    }
+  }, [myPos, position, onChange]);
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-slate-500">{label || MAP_LABELS.clickToPin}</p>
-      <div className="rounded-xl overflow-hidden border border-border" style={{ height }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <p className="text-[11px] text-slate-500">{label || MAP_LABELS.clickToPin}</p>
+        <button
+          type="button"
+          onClick={handleUseMyLocation}
+          disabled={locating}
+          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary-light text-xs font-semibold hover:bg-primary/25 disabled:opacity-50 touch-manipulation shrink-0"
+        >
+          {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LocateFixed className="w-3.5 h-3.5" />}
+          {locating ? MAP_LABELS.locatingYou : MAP_LABELS.useMyLocation}
+        </button>
+      </div>
+      {geoError && (
+        <p className="text-[11px] text-warning">{geoError}</p>
+      )}
+      <div className="rounded-xl overflow-hidden border border-border tracking-map-height" style={{ height }}>
         <MapContainer
           center={center}
           zoom={13}
@@ -79,6 +118,7 @@ export default function LocationMapPicker({
         >
           <AppMapTileLayer />
           <ClickHandler onPick={(lat, lng) => onChange({ lat, lng })} />
+          {!position && myPos && <RecenterMap position={myPos} />}
           {position && (
             <>
               <RecenterMap position={position} />

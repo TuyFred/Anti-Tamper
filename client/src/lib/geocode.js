@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from './runtimeConfig';
+
 const cache = new Map();
 
 /** Approximate bounding box for Rwanda */
@@ -14,8 +16,90 @@ export function isInRwanda(lat, lng) {
     && lng >= RWANDA_BOUNDS.lngMin && lng <= RWANDA_BOUNDS.lngMax;
 }
 
-/** Default map centre — Kigali City, Rwanda */
-export const KIGALI_CENTER = [-1.9403, 29.8739];
+/** Reject Paris/test coords — box GPS must be inside Rwanda */
+export function isValidBoxGps(lat, lng) {
+  return isInRwanda(lat, lng);
+}
+
+export function sanitizeDeviceCoords(device) {
+  if (!device) return device;
+  if (!isValidBoxGps(device.latitude, device.longitude)) {
+    return { ...device, latitude: null, longitude: null };
+  }
+  return device;
+}
+
+/** Default map centre — Kigali Convention Centre / Kacyiru (City of Kigali) */
+export const KIGALI_CENTER = [-1.9536, 30.0946];
+
+/** Landmarks & sector centres — map pins, address fallback */
+export const KIGALI_SECTOR_COORDS = [
+  { district: 'Gasabo', sector: 'Kacyiru', lat: -1.9536, lng: 30.0946, landmark: 'Kigali Convention Centre' },
+  { district: 'Gasabo', sector: 'Gisozi', lat: -1.9285, lng: 30.0625, landmark: 'University of Kigali' },
+  { district: 'Gasabo', sector: 'Kimironko', lat: -1.9594, lng: 30.1045 },
+  { district: 'Gasabo', sector: 'Remera', lat: -1.9496, lng: 30.0946 },
+  { district: 'Gasabo', sector: 'Kacyiru', lat: -1.9365, lng: 30.0723 },
+  { district: 'Gasabo', sector: 'Gisozi', lat: -1.9280, lng: 30.0950 },
+  { district: 'Gasabo', sector: 'Rusororo', lat: -1.9120, lng: 30.1180 },
+  { district: 'Kicukiro', sector: 'Kanombe', lat: -1.9686, lng: 30.1395 },
+  { district: 'Kicukiro', sector: 'Kicukiro', lat: -1.9896, lng: 30.1128 },
+  { district: 'Kicukiro', sector: 'Gikondo', lat: -1.9700, lng: 30.0780 },
+  { district: 'Kicukiro', sector: 'Niboye', lat: -1.9950, lng: 30.0950 },
+  { district: 'Nyarugenge', sector: 'Nyarugenge', lat: -1.9403, lng: 30.0580 },
+  { district: 'Nyarugenge', sector: 'Muhima', lat: -1.9403, lng: 30.0444 },
+  { district: 'Nyarugenge', sector: 'Kimisagara', lat: -1.9700, lng: 30.0400 },
+  { district: 'Nyarugenge', sector: 'Mageragere', lat: -1.9850, lng: 30.0150 },
+];
+
+function haversineKmLocal(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Nearest Kigali sector for coords — accurate Kimironko vs Kanombe labels */
+export function resolveNearestKigaliSector(lat, lng) {
+  if (!isInRwanda(lat, lng)) return null;
+  let best = null;
+  let bestKm = Infinity;
+  for (const s of KIGALI_SECTOR_COORDS) {
+    const km = haversineKmLocal(lat, lng, s.lat, s.lng);
+    if (km < bestKm) {
+      bestKm = km;
+      best = { ...s, distanceKm: km };
+    }
+  }
+  if (!best || bestKm > 6) return null;
+  return best;
+}
+
+export function formatKigaliSectorPlace(sectorInfo, addrParts = {}) {
+  if (!sectorInfo) return null;
+  const bits = [
+    addrParts.road,
+    addrParts.village,
+    addrParts.cell,
+    sectorInfo.sector,
+    sectorInfo.district,
+    'City of Kigali',
+    'Rwanda',
+  ].filter(Boolean);
+  const unique = bits.filter((p, i, arr) => arr.indexOf(p) === i);
+  return unique.join(', ');
+}
+
+/** Map pin from Rwanda address fields when user has not tapped the map yet */
+export function coordsFromRwandaAddress(addr) {
+  if (!addr?.sector || !addr?.district) return null;
+  const match = KIGALI_SECTOR_COORDS.find(
+    (s) => s.sector === addr.sector && s.district === addr.district,
+  );
+  if (!match) return null;
+  return { lat: match.lat, lng: match.lng };
+}
 
 function cacheKey(lat, lng) {
   return `${lat.toFixed(4)},${lng.toFixed(4)}`;
@@ -111,20 +195,88 @@ export function formatGeocodeResult(data) {
 /** Human-readable live location line for Rwanda GPS readouts. */
 export function formatLiveLocationSummary(placeName, lat, lng) {
   if (placeName) return placeName;
+  const sector = resolveNearestKigaliSector(lat, lng);
+  if (sector) return formatKigaliSectorPlace(sector);
   if (isInRwanda(lat, lng)) {
     return `Live GPS coordinates in Rwanda (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`;
   }
   return `Live GPS (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`;
 }
 
-/** Reverse geocode lat/lng → human-readable place name (OpenStreetMap Nominatim, English). */
-export async function reverseGeocode(lat, lng) {
+/** Structured Rwanda address for map overlays (street, cell, sector, district, country). */
+export function formatAddressLines(details) {
+  if (!details) return [];
+  if (Array.isArray(details.lines) && details.lines.length) return details.lines;
+  const lines = [];
+  if (details.road) lines.push(details.road);
+  const adminParts = [
+    details.village && `Village ${details.village}`,
+    details.cell && `Cell ${details.cell}`,
+    details.sector && `Sector ${details.sector}`,
+    details.district && `District ${details.district}`,
+    details.province,
+    details.country || 'Rwanda',
+  ].filter(Boolean);
+  if (adminParts.length) lines.push(adminParts.join(' · '));
+  return lines;
+}
+
+function parseOsmToDetails(data, lat, lng) {
+  const address = data?.address || {};
+  const localSector = resolveNearestKigaliSector(lat, lng);
+
+  let road = pickAddressPart(address, ['road', 'pedestrian', 'footway', 'residential', 'street', 'path']);
+  let village = pickAddressPart(address, ['village', 'hamlet', 'locality']);
+  let cell = pickAddressPart(address, ['neighbourhood', 'quarter', 'residential']);
+  let sector = pickAddressPart(address, ['suburb', 'city_block', 'borough']) || localSector?.sector;
+  let district = pickAddressPart(address, ['county', 'city_district', 'district', 'municipality'])
+    || localSector?.district;
+  let province = pickAddressPart(address, ['state', 'region']) || 'City of Kigali';
+  const country = address.country || 'Rwanda';
+
+  if (!road) {
+    const englishName = preferEnglishName(data);
+    if (englishName) road = englishName;
+  }
+
+  const details = { road, village, cell, sector, district, province, country };
+  details.lines = formatAddressLines(details);
+  details.formatted = details.lines.join(', ')
+    || formatLiveLocationSummary(null, lat, lng);
+  return details;
+}
+
+/** Reverse geocode → structured address (API proxy first, OSM fallback). */
+export async function reverseGeocodeDetails(lat, lng) {
   if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
     return null;
   }
 
-  const key = cacheKey(lat, lng);
+  const key = `d:${cacheKey(lat, lng)}`;
   if (cache.has(key)) return cache.get(key);
+
+  try {
+    const apiUrl = `${getApiBaseUrl()}/api/locations/reverse?lat=${lat}&lng=${lng}`;
+    const res = await fetch(apiUrl, { headers: { Accept: 'application/json' } });
+    if (res.ok) {
+      const data = await res.json();
+      const details = {
+        road: data.road,
+        village: data.village,
+        cell: data.cell,
+        sector: data.sector,
+        district: data.district,
+        province: data.province,
+        country: data.country || 'Rwanda',
+        lines: data.lines || formatAddressLines(data),
+        formatted: data.formatted || data.lines?.join(', '),
+      };
+      cache.set(key, details);
+      return details;
+    }
+  } catch {
+    /* fall through to direct OSM */
+  }
 
   try {
     const url = new URL('https://nominatim.openstreetmap.org/reverse');
@@ -147,19 +299,110 @@ export async function reverseGeocode(lat, lng) {
     if (!res.ok) return null;
 
     const data = await res.json();
-    const name = formatGeocodeResult(data);
-    cache.set(key, name);
-    return name;
+    const details = parseOsmToDetails(data, lat, lng);
+    cache.set(key, details);
+    return details;
   } catch {
+    const localSector = resolveNearestKigaliSector(lat, lng);
+    if (localSector) {
+      const details = {
+        sector: localSector.sector,
+        district: localSector.district,
+        province: 'City of Kigali',
+        country: 'Rwanda',
+      };
+      details.lines = formatAddressLines(details);
+      details.formatted = details.lines.join(', ');
+      return details;
+    }
     return null;
   }
 }
 
-export function mergeDevicesWithGps(devices, gpsUpdates = {}) {
-  return devices.map((device) => {
-    const update = gpsUpdates[device.id];
-    if (!update) return device;
+/** Reverse geocode lat/lng → human-readable place name (OpenStreetMap Nominatim, English). */
+export async function reverseGeocode(lat, lng) {
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+    return null;
+  }
 
+  const key = cacheKey(lat, lng);
+  if (cache.has(key)) return cache.get(key);
+
+  const details = await reverseGeocodeDetails(lat, lng);
+  const name = details?.formatted || null;
+  if (name) cache.set(key, name);
+  return name;
+}
+
+export function getGpsUpdateForDevice(device, gpsUpdates = {}) {
+  if (!device || !gpsUpdates) return null;
+  if (device.id && gpsUpdates[device.id]) return gpsUpdates[device.id];
+  if (device.device_id && gpsUpdates[`hw:${device.device_id}`]) {
+    return gpsUpdates[`hw:${device.device_id}`];
+  }
+  return null;
+}
+
+/** True when GPS was updated recently (live hardware fix). */
+export function isLocationFresh(lastSeen, maxAgeMs = 120000) {
+  if (!lastSeen) return false;
+  return Date.now() - new Date(lastSeen).getTime() < maxAgeMs;
+}
+
+export function resolveLiveDevice(devices, gpsUpdates, { uuid, hardwareId } = {}) {
+  let device = null;
+  if (uuid) device = devices.find((d) => d.id === uuid);
+  if (!device && hardwareId) {
+    device = devices.find((d) => d.device_id === hardwareId);
+  }
+  return device ? mergeDeviceWithGps(device, gpsUpdates) : null;
+}
+
+/**
+ * Box map position — only from live socket feed or recent hardware GPS.
+ * Never falls back to phone/laptop location or stale DB coordinates.
+ */
+export function getLiveMapPosition(device, gpsUpdates = {}, { maxAgeMs = 120000 } = {}) {
+  if (!device) return null;
+
+  const update = getGpsUpdateForDevice(device, gpsUpdates);
+  if (update?.latitude != null && update?.longitude != null && isValidBoxGps(update.latitude, update.longitude)) {
+    return {
+      lat: update.latitude,
+      lng: update.longitude,
+      last_seen: update.timestamp || new Date().toISOString(),
+      source: 'live',
+      fresh: true,
+    };
+  }
+
+  if (
+    device.latitude != null
+    && device.longitude != null
+    && isValidBoxGps(device.latitude, device.longitude)
+    && isLocationFresh(device.last_seen, maxAgeMs)
+  ) {
+    return {
+      lat: device.latitude,
+      lng: device.longitude,
+      last_seen: device.last_seen,
+      source: 'hardware',
+      fresh: Boolean(device.is_online),
+    };
+  }
+
+  return null;
+}
+
+export function mergeDevicesWithGps(devices, gpsUpdates = {}) {
+  return (devices || []).map((device) => mergeDeviceWithGps(device, gpsUpdates));
+}
+
+export function mergeDeviceWithGps(device, gpsUpdates = {}) {
+  if (!device) return null;
+
+  const update = getGpsUpdateForDevice(device, gpsUpdates);
+  if (update && isValidBoxGps(update.latitude, update.longitude)) {
     return {
       ...device,
       latitude: update.latitude,
@@ -167,19 +410,20 @@ export function mergeDevicesWithGps(devices, gpsUpdates = {}) {
       last_seen: update.timestamp || device.last_seen,
       is_online: true,
     };
-  });
-}
+  }
 
-export function mergeDeviceWithGps(device, gpsUpdates = {}) {
-  if (!device) return null;
-  const update = gpsUpdates[device.id];
-  if (!update) return device;
+  const pos = getLiveMapPosition(device, gpsUpdates);
+  if (pos) {
+    return {
+      ...device,
+      latitude: pos.lat,
+      longitude: pos.lng,
+    };
+  }
 
   return {
     ...device,
-    latitude: update.latitude,
-    longitude: update.longitude,
-    last_seen: update.timestamp || device.last_seen,
-    is_online: true,
+    latitude: null,
+    longitude: null,
   };
 }

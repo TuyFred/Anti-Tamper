@@ -3,10 +3,16 @@ import {
   AlertTriangle, Vibrate, Shield, MapPin, Loader2,
 } from 'lucide-react';
 import Badge from './ui/Badge';
+import { formatLockStatusLabel, isBoxOpen } from '../lib/deliveryUtils';
 import { useReverseGeocode } from '../hooks/useReverseGeocode';
+import { isValidBoxGps } from '../lib/geocode';
 
 export default function DeviceControl({ device, onUnlock, onLock, onToggleAlarm, loading, canControl = false }) {
-  const { placeName, loading: geoLoading } = useReverseGeocode(device?.latitude, device?.longitude);
+  const hasValidGps = isValidBoxGps(device?.latitude, device?.longitude);
+  const { placeName, loading: geoLoading } = useReverseGeocode(
+    hasValidGps ? device.latitude : null,
+    hasValidGps ? device.longitude : null,
+  );
 
   if (!device) {
     return (
@@ -37,22 +43,40 @@ export default function DeviceControl({ device, onUnlock, onLock, onToggleAlarm,
 
       <div className="p-5 space-y-4 flex-1">
         <div className="grid grid-cols-2 gap-3">
-          <StatusBadge icon={Shield} label="Lock" value={device.lock_status === 'unlocked' ? 'Open' : 'Locked'} alert={device.lock_status === 'unlocked'} />
+          <StatusBadge icon={Shield} label="Box" value={formatLockStatusLabel(device.lock_status)} alert={isBoxOpen(device.lock_status)} />
           <StatusBadge icon={AlertTriangle} label="Tamper" value={device.tamper_status ? 'ACTIVE' : 'OK'} alert={device.tamper_status} />
           <StatusBadge icon={Vibrate} label="Shock" value={device.shock_detected ? 'DETECTED' : 'OK'} alert={device.shock_detected} />
           <StatusBadge icon={Bell} label="Alarm" value={device.buzzer_active ? 'ACTIVE' : 'Off'} alert={device.buzzer_active} />
         </div>
 
-        {device.latitude != null && device.longitude != null && (
+        <div className={`rounded-xl p-3 border text-xs ${
+          isBoxOpen(device.lock_status)
+            ? 'bg-success/10 border-success/25 text-success'
+            : 'bg-primary/10 border-primary/25 text-primary-light'
+        }`}>
+          {isBoxOpen(device.lock_status) ? (
+            <>
+              <p className="font-semibold">Box is unlocked</p>
+              <p className="text-slate-400 mt-1">All 3 blue LEDs ON (Wi‑Fi + 2 status). You can open the lid and use the box normally.</p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold">Box is locked</p>
+              <p className="text-slate-400 mt-1">1 blue Wi‑Fi LED ON if connected; the other 2 blue LEDs OFF. Press Unlock to open the box.</p>
+            </>
+          )}
+        </div>
+
+        {hasValidGps ? (
           <div className="p-3 bg-surface rounded-xl border border-border space-y-1">
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <MapPin className="w-3.5 h-3.5 text-primary-light shrink-0" />
-              <span className="font-medium text-white">Live location</span>
+              <span className="font-medium text-white">Box GPS</span>
             </div>
             {geoLoading && !placeName ? (
               <p className="text-xs text-slate-500 flex items-center gap-1 pl-5">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Resolving place name…
+                Loading…
               </p>
             ) : (
               placeName && <p className="text-xs text-slate-300 pl-5">{placeName}</p>
@@ -65,6 +89,13 @@ export default function DeviceControl({ device, onUnlock, onLock, onToggleAlarm,
                 Updated {new Date(device.last_seen).toLocaleString()}
               </p>
             )}
+          </div>
+        ) : (
+          <div className="p-3 bg-surface rounded-xl border border-border text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 text-primary-light shrink-0" />
+              <span>Location on map — tap the box icon to see it</span>
+            </div>
           </div>
         )}
 

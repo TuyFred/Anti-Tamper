@@ -1,23 +1,20 @@
+import { Link } from 'react-router-dom';
 import { AlertTriangle, MapPin, Vibrate, Shield, Check, Bell } from 'lucide-react';
 import Badge from './ui/Badge';
+import AlertDateTime from './AlertDateTime';
+import { formatDateTimeFull } from '../lib/datetime';
 
 export const EVENT_CONFIG = {
-  tamper: { icon: AlertTriangle, color: 'text-danger', bg: 'bg-danger/8', label: 'Tamper', emailColor: '#ef4444' },
-  shock: { icon: Vibrate, color: 'text-warning', bg: 'bg-warning/8', label: 'Motion / Fall / Touch', emailColor: '#f59e0b' },
-  unauthorized: { icon: Shield, color: 'text-danger', bg: 'bg-danger/8', label: 'Unauthorized', emailColor: '#ef4444' },
+  tamper: { icon: AlertTriangle, color: 'text-danger', bg: 'bg-danger/10', label: 'Tamper', emailColor: '#ef4444' },
+  shock: { icon: Vibrate, color: 'text-warning', bg: 'bg-warning/10', label: 'Impact / Shock', emailColor: '#f59e0b' },
+  unauthorized: { icon: Shield, color: 'text-danger', bg: 'bg-danger/10', label: 'Unauthorized open', emailColor: '#ef4444' },
   gps: { icon: MapPin, color: 'text-primary-light', bg: 'bg-primary/8', label: 'GPS', emailColor: '#3b82f6' },
   system: { icon: Bell, color: 'text-slate-400', bg: 'bg-surface', label: 'System', emailColor: '#64748b' },
 };
 
+/** @deprecated use formatDateTimeFull from lib/datetime */
 export function formatAlertTime(iso) {
-  return new Date(iso).toLocaleString('en-US', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTimeFull(iso, { withSeconds: false });
 }
 
 export default function AlertList({
@@ -47,7 +44,7 @@ export default function AlertList({
           <li
             key={alert.id}
             className={`transition ${compact ? 'px-4 py-3' : 'px-5 py-4'} ${
-              isCritical ? config.bg : 'hover:bg-surface/30'
+              isCritical ? `${config.bg} ring-1 ring-inset ${alert.event_type === 'shock' ? 'ring-warning/20' : 'ring-danger/20'}` : 'hover:bg-surface/30'
             }`}
           >
             <div className="flex gap-3">
@@ -80,23 +77,32 @@ export default function AlertList({
                 <p className={`text-white ${compact ? 'text-xs' : 'text-sm'} leading-relaxed`}>
                   {alert.message}
                 </p>
-                <p className="text-[11px] text-slate-500 mt-1.5">
-                  {alert.device?.name || 'Unknown device'}
-                  {alert.device?.device_id && (
-                    <span className="font-mono text-slate-600"> · {alert.device.device_id}</span>
+                <div className="mt-2 space-y-1.5">
+                  <AlertDateTime
+                    iso={alert.created_at}
+                    live
+                    variant={compact ? 'compact' : 'default'}
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    {alert.device?.name || 'Unknown device'}
+                    {alert.device?.device_id && (
+                      <span className="font-mono text-slate-600"> · {alert.device.device_id}</span>
+                    )}
+                  </p>
+                  {alert.is_acknowledged && alert.acknowledged_at && (
+                    <p className="text-[10px] text-success/90">
+                      Acknowledged · {formatDateTimeFull(alert.acknowledged_at)}
+                    </p>
                   )}
-                  <span className="block sm:inline sm:ml-1"> · {formatAlertTime(alert.created_at)}</span>
-                </p>
+                </div>
                 {alert.latitude != null && alert.longitude != null && (
-                  <a
-                    href={`https://www.google.com/maps?q=${alert.latitude},${alert.longitude}`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <Link
+                    to="/tracking"
                     className="inline-flex items-center gap-1 text-[11px] text-primary-light hover:text-white mt-1"
                   >
                     <MapPin className="w-3 h-3" />
-                    View location on map
-                  </a>
+                    View on live map
+                  </Link>
                 )}
                 {isCritical && onAcknowledge && (
                   <button

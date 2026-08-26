@@ -6,26 +6,30 @@ import {
 } from '../middleware/auth.js';
 import { isCustomer, isManager, isRider } from '../middleware/permissions.js';
 import { calculateDeliveryPrice, generateUnlockToken } from '../services/pricing.js';
-import { sendDeviceCommand } from '../mqtt/handler.js';
+import { sendDeviceCommand, broadcastDeviceUpdate } from '../mqtt/handler.js';
 import {
   logDeliveryStatus, logPaymentEvent, logActivity,
 } from '../lib/activityLog.js';
+import { notifyDeliveryUpdate } from '../lib/deliveryNotify.js';
+import {
+  getDeliverySelect,
+  handleDeliveryQueryError,
+} from '../lib/deliverySelect.js';
 
 const router = Router();
 
-const DELIVERY_SELECT = `
-  *,
-  customer:profiles!delivery_requests_customer_id_fkey(id, email, full_name),
-  rider:profiles!delivery_requests_rider_id_fkey(id, email, full_name),
-  device:devices(id, device_id, name, lock_status, is_online)
-`;
+async function selectDelivery(queryBuilder) {
+  let result = await queryBuilder(getDeliverySelect());
+  if (result.error && handleDeliveryQueryError(result.error)) {
+    result = await queryBuilder(getDeliverySelect());
+  }
+  return result;
+}
 
 async function getDeliveryById(id) {
-  const { data, error } = await supabase
-    .from('delivery_requests')
-    .select(DELIVERY_SELECT)
-    .eq('id', id)
-    .single();
+  const { data, error } = await selectDelivery((select) =>
+    supabase.from('delivery_requests').select(select).eq('id', id).single(),
+  );
   if (error) return null;
   return data;
 }
@@ -40,8 +44,10 @@ function sanitizeDelivery(delivery, profile, userId) {
   delete sanitized.token_expires_at;
 
   if (isManager(profile)) {
-    sanitized.customer_token_sent = Boolean(delivery.unlock_token);
-    sanitized.token_delivery = delivery.unlock_token ? {
+    const hasActiveToken = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
+    sanitized.customer_token_sent = hasActiveToken;
+    sanitized.token_request_pending = Boolean(delivery.token_requested_at);
+    sanitized.token_delivery = hasActiveToken ? {
       channel: 'customer_inbox',
       recipient_email: delivery.customer?.email || null,
       recipient_name: delivery.customer?.full_name || null,
@@ -52,26 +58,98 @@ function sanitizeDelivery(delivery, profile, userId) {
   return sanitized;
 }
 
+function isTokenExpired(delivery) {
+  return Boolean(delivery.token_expires_at)
+    && new Date(delivery.token_expires_at) < new Date();
+}
+
+function customerNeedsNewToken(delivery) {
+  if (!['rider_assigned', 'in_transit'].includes(delivery.status)) return false;
+  if (!delivery.device_id) return false;
+  if (delivery.token_requested_at && !delivery.unlock_token) return false;
+  if (delivery.token_closed_at) return true;
+  if (!delivery.unlock_token) return true;
+  if (isTokenExpired(delivery)) return true;
+  return false;
+}
+
 function sanitizeDeliveries(list, profile, userId) {
   return (list || []).map((d) => sanitizeDelivery(d, profile, userId));
 }
 
 async function lockDevice(deviceRow) {
-  if (!deviceRow?.device_id) return;
-  sendDeviceCommand(deviceRow.device_id, 'lock');
+  if (!deviceRow?.device_id) {
+    throw new Error('No Smart Box assigned to this delivery');
+  }
+  try {
+    sendDeviceCommand(deviceRow.device_id, 'lock');
+  } catch (err) {
+    throw new Error(err.message || 'MQTT offline — cannot lock. Check MQTT connection.');
+  }
+  const updatedAt = new Date().toISOString();
   await supabase
     .from('devices')
-    .update({ lock_status: 'locked', updated_at: new Date().toISOString() })
+    .update({ lock_status: 'locked', updated_at: updatedAt })
     .eq('id', deviceRow.id);
+  broadcastDeviceUpdate({ ...deviceRow, lock_status: 'locked', updated_at: updatedAt, is_online: true });
+  return { mqttSent: true };
 }
 
 async function unlockDevice(deviceRow, userId) {
-  if (!deviceRow?.device_id) return;
-  sendDeviceCommand(deviceRow.device_id, 'unlock', { authorized: true, user_id: userId });
+  if (!deviceRow?.device_id) {
+    throw new Error('No Smart Box assigned to this delivery');
+  }
+  let mqttSent = false;
+  let mqttError = null;
+  try {
+    sendDeviceCommand(deviceRow.device_id, 'unlock', { authorized: true, user_id: userId });
+    mqttSent = true;
+  } catch (err) {
+    mqttError = err.message || 'MQTT offline';
+    console.warn(`MQTT unlock failed for ${deviceRow.device_id}:`, mqttError);
+  }
+  const updatedAt = new Date().toISOString();
   await supabase
     .from('devices')
-    .update({ lock_status: 'unlocked', updated_at: new Date().toISOString() })
+    .update({ lock_status: 'unlocked', updated_at: updatedAt })
     .eq('id', deviceRow.id);
+  broadcastDeviceUpdate({ ...deviceRow, lock_status: 'unlocked', updated_at: updatedAt, is_online: true });
+  return { mqttSent, mqttError };
+}
+
+async function issueUnlockToken(delivery, actorId, summary) {
+  const token = generateUnlockToken();
+  const expires = new Date();
+  expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('delivery_requests')
+    .update({
+      unlock_token: token,
+      token_expires_at: expires.toISOString(),
+      token_sent_at: now,
+      token_used_at: null,
+      token_closed_at: null,
+      token_requested_at: null,
+      updated_at: now,
+    })
+    .eq('id', delivery.id)
+    .select(getDeliverySelect())
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  await logActivity({
+    entityType: 'delivery',
+    entityId: data.id,
+    action: 'token_sent',
+    actorId,
+    summary,
+  });
+
+  notifyDeliveryUpdate(data);
+  return data;
 }
 
 /** Customer can track assigned box on the map (view only — open uses delivery token). */
@@ -88,7 +166,7 @@ async function grantCustomerDeviceView(customerId, deviceId, grantedBy) {
 }
 
 function isTokenConsumed(delivery) {
-  return Boolean(delivery.token_closed_at) || !delivery.unlock_token;
+  return Boolean(delivery.token_closed_at) || Boolean(delivery.token_used_at && delivery.token_closed_at) || !delivery.unlock_token;
 }
 
 router.get('/public/config', (_req, res) => {
@@ -134,17 +212,20 @@ router.post('/estimate', authenticate, requireApproved, (req, res) => {
 });
 
 router.get('/', authenticate, requireApproved, async (req, res) => {
-  let query = supabase.from('delivery_requests').select(DELIVERY_SELECT).order('created_at', { ascending: false });
-
-  if (isCustomer(req.profile)) {
-    query = query.eq('customer_id', req.user.id);
-  } else if (isRider(req.profile)) {
-    query = query.eq('rider_id', req.user.id);
-  } else if (!isManager(req.profile)) {
+  if (!isCustomer(req.profile) && !isRider(req.profile) && !isManager(req.profile)) {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  const { data, error } = await query;
+  const { data, error } = await selectDelivery((select) => {
+    let query = supabase.from('delivery_requests').select(select).order('created_at', { ascending: false });
+    if (isCustomer(req.profile)) {
+      query = query.eq('customer_id', req.user.id);
+    } else if (isRider(req.profile)) {
+      query = query.eq('rider_id', req.user.id);
+    }
+    return query;
+  });
+
   if (error) return res.status(500).json({ error: error.message });
   res.json(sanitizeDeliveries(data, req.profile, req.user.id));
 });
@@ -194,7 +275,7 @@ router.post('/', authenticate, requireApproved, async (req, res) => {
   const { data, error } = await supabase
     .from('delivery_requests')
     .insert(row)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -204,10 +285,11 @@ router.post('/', authenticate, requireApproved, async (req, res) => {
     entityId: data.id,
     action: 'created',
     actorId: req.user.id,
-    summary: 'New delivery request',
+    summary: `New delivery request — ${data.customer?.full_name || 'customer'}${data.customer?.phone ? ` · ${data.customer.phone}` : ''}`,
     newValue: {
       pickup_address: data.pickup_address,
       delivery_address: data.delivery_address,
+      customer_phone: data.customer?.phone || req.profile?.phone || null,
       pickup_latitude: data.pickup_latitude,
       pickup_longitude: data.pickup_longitude,
       delivery_latitude: data.delivery_latitude,
@@ -242,7 +324,7 @@ router.post('/:id/payment-proof', authenticate, requireApproved, async (req, res
       updated_at: new Date().toISOString(),
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -275,7 +357,7 @@ router.post('/:id/verify-payment', authenticate, requireApproved, requireManager
       updated_at: new Date().toISOString(),
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -308,7 +390,7 @@ router.post('/:id/reject-payment', authenticate, requireApproved, requireManager
       manager_notes: req.body?.reason?.trim() || delivery.manager_notes,
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -345,7 +427,7 @@ router.post('/:id/cancel', authenticate, requireApproved, requireManager, async 
       manager_notes: req.body?.reason?.trim() || delivery.manager_notes,
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -396,10 +478,11 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
       token_sent_at: new Date().toISOString(),
       token_used_at: null,
       token_closed_at: null,
+      token_requested_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -412,42 +495,73 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     summary: 'Rider and Smart Box assigned',
     newValue: { rider_id, device_id, token_sent_at: data.token_sent_at },
   });
+  notifyDeliveryUpdate(data);
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
     message: 'Rider assigned. Unlock code sent to customer inbox (one-time use at delivery B).',
   });
 });
 
-/** Manager: resend / regenerate unlock token (only if not yet consumed). */
+/** Manager/Admin: send or resend unlock token (even after used/expired). */
 router.post('/:id/send-token', authenticate, requireApproved, requireManager, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
   if (!['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status)) {
     return res.status(400).json({ error: 'Token can only be sent after payment is verified' });
   }
-  if (delivery.token_closed_at) {
-    return res.status(400).json({ error: 'Token already used — customer closed the box' });
-  }
   if (!delivery.device_id) {
     return res.status(400).json({ error: 'Assign a Smart Box before sending token' });
   }
 
-  const token = generateUnlockToken();
-  const expires = new Date();
-  expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
+  try {
+    const data = await issueUnlockToken(
+      delivery,
+      req.user.id,
+      delivery.token_closed_at || delivery.token_requested_at
+        ? 'New unlock token resent to customer'
+        : 'Unlock token sent to customer',
+    );
 
+    res.json({
+      ...sanitizeDelivery(data, req.profile, req.user.id),
+      message: 'Unlock code sent successfully — customer can see and use it on Dashboard / Deliveries.',
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/** Customer: request a new unlock code — manager must approve via send-token. */
+router.post('/:id/request-token', authenticate, requireApproved, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+
+  if (delivery.customer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Only the customer can request a new unlock code' });
+  }
+  if (delivery.token_requested_at && !delivery.unlock_token) {
+    return res.status(400).json({ error: 'Request already pending — wait for manager to send a new code' });
+  }
+  if (!customerNeedsNewToken(delivery)) {
+    return res.status(400).json({
+      error: delivery.unlock_token && !delivery.token_closed_at && !isTokenExpired(delivery)
+        ? 'You already have a valid unlock code on your dashboard'
+        : 'Cannot request a new code for this delivery yet',
+    });
+  }
+  if (!delivery.device_id) {
+    return res.status(400).json({ error: 'No Smart Box assigned to this delivery yet' });
+  }
+
+  const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('delivery_requests')
     .update({
-      unlock_token: token,
-      token_expires_at: expires.toISOString(),
-      token_sent_at: new Date().toISOString(),
-      token_used_at: null,
-      token_closed_at: null,
-      updated_at: new Date().toISOString(),
+      token_requested_at: now,
+      updated_at: now,
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -455,14 +569,16 @@ router.post('/:id/send-token', authenticate, requireApproved, requireManager, as
   await logActivity({
     entityType: 'delivery',
     entityId: data.id,
-    action: 'token_sent',
+    action: 'token_requested',
     actorId: req.user.id,
-    summary: 'Unlock token sent to customer',
+    summary: 'Customer requested box opening again — awaiting manager approval',
   });
+
+  notifyDeliveryUpdate(data);
 
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Unlock code sent to customer inbox.',
+    message: 'Box opening request sent — a manager will approve and send a new unlock code.',
   });
 });
 
@@ -482,7 +598,7 @@ router.post('/:id/start-transit', authenticate, requireApproved, async (req, res
     .from('delivery_requests')
     .update({ status: 'in_transit', updated_at: new Date().toISOString() })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -507,8 +623,11 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
   if (!token || token.trim().toUpperCase() !== delivery.unlock_token?.toUpperCase()) {
     return res.status(403).json({ error: 'Invalid unlock code' });
   }
-  if (delivery.token_used_at) {
-    return res.status(400).json({ error: 'Box already opened — close it to finish. Code cannot open twice.' });
+  if (delivery.token_used_at && delivery.token_closed_at) {
+    return res.status(400).json({ error: 'Unlock code already used — ask manager for a new one.' });
+  }
+  if (delivery.token_used_at && !delivery.token_closed_at) {
+    return res.status(400).json({ error: 'Box already opened — close it to finish before using the code again.' });
   }
   if (delivery.token_expires_at && new Date(delivery.token_expires_at) < new Date()) {
     return res.status(400).json({ error: 'Unlock code expired — ask manager to send a new one' });
@@ -517,30 +636,38 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
     return res.status(400).json({ error: 'No Smart Box assigned to this delivery' });
   }
 
-  await unlockDevice(delivery.device, req.user.id);
+  try {
+    const unlockResult = await unlockDevice(delivery.device, req.user.id);
+    const { data, error } = await supabase
+      .from('delivery_requests')
+      .update({
+        token_used_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', delivery.id)
+      .select(getDeliverySelect())
+      .single();
 
-  const { data, error } = await supabase
-    .from('delivery_requests')
-    .update({
-      token_used_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
-    .single();
+    if (error) return res.status(500).json({ error: error.message });
+    await logActivity({
+      entityType: 'delivery',
+      entityId: data.id,
+      action: 'box_unlocked',
+      actorId: req.user.id,
+      summary: 'Customer unlocked Smart Box with token',
+    });
 
-  if (error) return res.status(500).json({ error: error.message });
-  await logActivity({
-    entityType: 'delivery',
-    entityId: data.id,
-    action: 'box_unlocked',
-    actorId: req.user.id,
-    summary: 'Customer unlocked Smart Box with token',
-  });
-  res.json({
-    ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Smart Box opened — retrieve your items, then tap Close Smart Box when done.',
-  });
+    const baseMessage = 'Smart Box opened — retrieve your items, then tap Close Smart Box when done.';
+    res.json({
+      ...sanitizeDelivery(data, req.profile, req.user.id),
+      message: unlockResult.mqttSent
+        ? baseMessage
+        : `${baseMessage} (Hardware link offline — if the box did not open, try again when online or ask manager.)`,
+      mqttSent: unlockResult.mqttSent,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res) => {
@@ -572,7 +699,7 @@ router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res
       updated_at: closedAt,
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -605,7 +732,7 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
         updated_at: new Date().toISOString(),
       })
       .eq('id', delivery.id)
-      .select(DELIVERY_SELECT)
+      .select(getDeliverySelect())
       .single();
     if (error) return res.status(500).json({ error: error.message });
     await logDeliveryStatus(data.id, delivery.status, 'delivered', req.user.id, 'Completed by manager');
@@ -632,7 +759,7 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
       updated_at: new Date().toISOString(),
     })
     .eq('id', delivery.id)
-    .select(DELIVERY_SELECT)
+    .select(getDeliverySelect())
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -643,15 +770,25 @@ router.post('/:id/complete', authenticate, requireApproved, async (req, res) => 
 router.post('/:id/manager-lock', authenticate, requireApproved, requireManager, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery?.device) return res.status(404).json({ error: 'No device on this delivery' });
-  await lockDevice(delivery.device);
-  res.json({ success: true, message: 'Smart Box locked' });
+  try {
+    await lockDevice(delivery.device);
+  } catch (err) {
+    return res.status(503).json({ error: err.message || 'Could not lock Smart Box' });
+  }
+  res.json({ success: true, message: 'Smart Box locked remotely' });
 });
 
 router.post('/:id/manager-unlock', authenticate, requireApproved, requireManager, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery?.device) return res.status(404).json({ error: 'No device on this delivery' });
-  await unlockDevice(delivery.device, req.user.id);
-  res.json({ success: true, message: 'Smart Box unlocked remotely' });
+  const result = await unlockDevice(delivery.device, req.user.id);
+  res.json({
+    success: true,
+    mqttSent: result.mqttSent,
+    message: result.mqttSent
+      ? 'Smart Box unlocked remotely'
+      : 'Unlock saved in dashboard — hardware command sends when MQTT reconnects',
+  });
 });
 
 export default router;

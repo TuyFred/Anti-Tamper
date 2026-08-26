@@ -1,21 +1,21 @@
-export default function StatCard({ icon: Icon, label, value, sub, accent = 'primary' }) {
+export default function StatCard({ icon: Icon, label, value, sub, accent = 'primary', compact = false }) {
   const accents = {
-    primary: 'from-primary/20 to-accent/10 text-primary-light',
-    success: 'from-success/20 to-success/5 text-success',
-    warning: 'from-warning/20 to-warning/5 text-warning',
-    danger: 'from-danger/20 to-danger/5 text-danger',
-    neutral: 'from-slate-500/20 to-slate-600/5 text-slate-300',
+    primary: 'from-primary/25 to-accent/10 text-primary-light ring-primary/20',
+    success: 'from-success/25 to-success/5 text-success ring-success/20',
+    warning: 'from-warning/25 to-warning/5 text-warning ring-warning/20',
+    danger: 'from-danger/25 to-danger/5 text-danger ring-danger/20',
+    neutral: 'from-slate-500/20 to-slate-600/5 text-slate-300 ring-slate-500/15',
   };
 
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-5 flex items-start gap-3 sm:gap-4 border border-border/80 hover:border-primary/15 transition-colors">
-      <div className={`p-2.5 sm:p-3 rounded-xl bg-gradient-to-br shrink-0 ${accents[accent]}`}>
-        <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+    <div className={`dashboard-stat ${compact ? 'dashboard-stat--compact' : ''}`}>
+      <div className={`dashboard-stat__icon bg-gradient-to-br ring-1 ${accents[accent]}`}>
+        <Icon className="w-5 h-5 sm:w-[1.35rem] sm:h-[1.35rem]" />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs sm:text-sm font-medium text-slate-400 uppercase tracking-wide">{label}</p>
-        <p className="text-2xl sm:text-3xl font-bold text-white mt-1 tabular-nums">{value}</p>
-        {sub && <p className="text-xs sm:text-sm text-slate-500 mt-1">{sub}</p>}
+      <div className="dashboard-stat__content">
+        <p className="dashboard-stat__label">{label}</p>
+        <p className="dashboard-stat__value">{value}</p>
+        {sub && <p className="dashboard-stat__sub">{sub}</p>}
       </div>
     </div>
   );

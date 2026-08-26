@@ -33,8 +33,21 @@ function divIcon(html, size, anchor = null) {
   });
 }
 
-/** Live Smart Box — blue with optional live pulse ring */
-export function createSmartBoxIcon({ selected = false, online = false, alert = false } = {}) {
+/** Direction arrow — shows which way the box is moving */
+export function createDirectionIcon(bearingDeg = 0, color = '#3b82f6') {
+  const size = 28;
+  const arrow = `<svg width="20" height="20" viewBox="0 0 24 24" style="transform:rotate(${bearingDeg}deg);transform-origin:12px 12px">
+    <path d="M12 2 L20 20 L12 16 L4 20 Z" fill="${color}" stroke="white" stroke-width="1.5"/>
+  </svg>`;
+  return divIcon(
+    `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.45))">${arrow}</div>`,
+    size,
+    size / 2,
+  );
+}
+
+/** Live Smart Box — blue with optional live pulse ring + hardware ID label */
+export function createSmartBoxIcon({ selected = false, online = false, alert = false, deviceId = null } = {}) {
   const size = selected ? 44 : 38;
   const bg = alert ? '#ef4444' : '#0ea5e9';
   const ring = selected ? '#60a5fa' : online ? '#10b981' : null;
@@ -44,6 +57,7 @@ export function createSmartBoxIcon({ selected = false, online = false, alert = f
       ring,
       pulse: online && !alert,
       icon: BOX_SVG,
+      label: deviceId || null,
       size,
     }),
     size,
@@ -79,6 +93,23 @@ export function createPickupIcon() {
   );
 }
 
+/** Delivery B — customer hand-off point */
+export function createCustomerIcon({ name = null } = {}) {
+  const size = 38;
+  const label = name ? name.split(' ')[0] : 'Customer';
+  return divIcon(
+    markerHtml({
+      bg: '#8b5cf6',
+      ring: '#a78bfa',
+      pulse: false,
+      icon: '<span style="color:white;font-weight:800;font-size:12px;font-family:Inter,sans-serif">C</span>',
+      label,
+      size,
+    }),
+    size,
+  );
+}
+
 /** Delivery B — blue pin with label */
 export function createDeliveryIcon() {
   const size = 36;
@@ -87,6 +118,40 @@ export function createDeliveryIcon() {
       bg: '#3b82f6',
       icon: '<span style="color:white;font-weight:800;font-size:13px;font-family:Inter,sans-serif">B</span>',
       label: 'Delivery',
+      size,
+    }),
+    size,
+  );
+}
+
+/** Live customer GPS — distinct from booked delivery address pin */
+export function createCustomerLiveIcon({ name = null } = {}) {
+  const size = 38;
+  const label = name ? name.split(' ')[0] : 'Customer';
+  return divIcon(
+    markerHtml({
+      bg: '#ec4899',
+      ring: '#f472b6',
+      pulse: true,
+      icon: '<span style="color:white;font-weight:800;font-size:12px;font-family:Inter,sans-serif">●</span>',
+      label,
+      size,
+    }),
+    size,
+  );
+}
+
+/** User / phone GPS — cyan dot for geolocation fallback */
+export function createUserLocationIcon() {
+  const size = 34;
+  const dot = '<div style="width:14px;height:14px;background:#06b6d4;border:3px solid white;border-radius:50%;box-shadow:0 0 0 4px rgba(6,182,212,0.35)"></div>';
+  return divIcon(
+    markerHtml({
+      bg: 'transparent',
+      ring: '#06b6d4',
+      pulse: true,
+      icon: dot,
+      label: 'You',
       size,
     }),
     size,

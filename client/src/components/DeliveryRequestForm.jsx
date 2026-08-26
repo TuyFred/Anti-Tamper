@@ -1,7 +1,7 @@
 import {
   PACKAGE_TYPES, EMPTY_RWANDA_ADDRESS, formatRwandaAddress,
-  haversineKm,
 } from '../lib/rwandaAddress';
+import { coordsFromRwandaAddress } from '../lib/geocode';
 import { RwandaAddressFields } from './RwandaAddressFields';
 
 export { PACKAGE_TYPES, formatRwandaAddress, RwandaAddressFields };
@@ -16,34 +16,45 @@ export const INITIAL_DELIVERY_FORM = {
   pickup_instructions: '',
   delivery_instructions: '',
   distance_km: '5',
-  payment_method: 'momo',
 };
 
+export function validateRwandaAddress(addr, label) {
+  if (!addr?.province) return `${label}: select province`;
+  if (!addr?.district) return `${label}: select district`;
+  if (!addr?.sector) return `${label}: select sector`;
+  if (!addr?.cell) return `${label}: select cell`;
+  if (!addr?.village) return `${label}: select village`;
+  if (!addr?.road?.trim()) return `${label}: enter road / house number`;
+  return null;
+}
+
+export function validateDeliveryForm(form) {
+  const pickupErr = validateRwandaAddress(form.pickup, 'Pickup');
+  if (pickupErr) return pickupErr;
+  const deliveryErr = validateRwandaAddress(form.delivery, 'Delivery');
+  if (deliveryErr) return deliveryErr;
+  return null;
+}
+
 export function buildDeliveryPayload(form) {
+  const pickup_coords = form.pickup_coords || coordsFromRwandaAddress(form.pickup);
+  const delivery_coords = form.delivery_coords || coordsFromRwandaAddress(form.delivery);
   const pickup_address = formatRwandaAddress(form.pickup);
   const delivery_address = formatRwandaAddress(form.delivery);
-  let distance_km = parseFloat(form.distance_km) || 5;
-
-  if (form.pickup_coords && form.delivery_coords) {
-    distance_km = Math.max(1, Math.round(haversineKm(
-      form.pickup_coords.lat, form.pickup_coords.lng,
-      form.delivery_coords.lat, form.delivery_coords.lng,
-    ) * 10) / 10);
-  }
+  const distance_km = Math.max(1, parseFloat(form.distance_km) || 5);
 
   return {
     pickup_address,
     delivery_address,
     distance_km,
-    payment_method: form.payment_method,
     package_type: form.package_type,
     is_confidential: form.is_confidential,
     pickup_details: form.pickup,
     delivery_details: form.delivery,
-    pickup_latitude: form.pickup_coords?.lat ?? null,
-    pickup_longitude: form.pickup_coords?.lng ?? null,
-    delivery_latitude: form.delivery_coords?.lat ?? null,
-    delivery_longitude: form.delivery_coords?.lng ?? null,
+    pickup_latitude: pickup_coords?.lat ?? null,
+    pickup_longitude: pickup_coords?.lng ?? null,
+    delivery_latitude: delivery_coords?.lat ?? null,
+    delivery_longitude: delivery_coords?.lng ?? null,
     special_instructions: [form.pickup_instructions, form.delivery_instructions].filter(Boolean).join(' | '),
   };
 }

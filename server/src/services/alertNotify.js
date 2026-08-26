@@ -1,58 +1,43 @@
-import { supabase } from '../config/supabase.js';
-import { sendAlertEmail, isEmailConfigured } from './email.js';
-
-async function getAlertRecipients(deviceId) {
-  const emails = new Set();
-
-  const { data: admins } = await supabase
-    .from('profiles')
-    .select('email, role:roles(name)')
-    .eq('is_approved', true);
-
-  for (const profile of admins || []) {
-    if (profile.role?.name === 'admin' && profile.email) {
-      emails.add(profile.email);
-    }
-  }
-
-  const { data: accessRows } = await supabase
-    .from('device_access')
-    .select('user_id')
-    .eq('device_id', deviceId)
-    .eq('can_view', true);
-
-  const userIds = (accessRows || []).map((r) => r.user_id);
-  if (userIds.length) {
-    const { data: users } = await supabase
-      .from('profiles')
-      .select('email')
-      .in('id', userIds)
-      .eq('is_approved', true);
-
-    for (const u of users || []) {
-      if (u.email) emails.add(u.email);
-    }
-  }
-
-  return [...emails];
-}
+import { resolveAlertRecipients } from '../lib/alertRecipients.js';
+import { isEmailConfigured, sendAlertEmail } from './email.js';
 
 export async function notifyAlertByEmail(alert, device) {
   if (!isEmailConfigured()) return;
   if (alert.severity !== 'critical') return;
 
-  const recipients = await getAlertRecipients(device.id);
-  if (!recipients.length) {
+  const { emails, linkedDelivery } = await resolveAlertRecipients(device.id, alert.event_type);
+  if (!emails.length) {
     console.warn('No email recipients for alert', alert.id);
     return;
   }
 
-  console.log(`📧 Sending alert email to ${recipients.length} recipient(s)...`);
+  console.log(`📧 Sending alert email to ${emails.length} recipient(s)...`);
+
+  const enrichedAlert = linkedDelivery
+    ? {
+      ...alert,
+      message: `${alert.message}${linkedDelivery.customer?.full_name ? ` · Customer: ${linkedDelivery.customer.full_name}` : ''}${linkedDelivery.status === 'delivered' ? ' · Post-delivery alert' : ''}`,
+    }
+    : alert;
 
   const results = await Promise.allSettled(
-    recipients.map((email) => sendAlertEmail(email, alert, device))
+    emails.map((email) => sendAlertEmail(email, enrichedAlert, device)),
   );
 
+  results.forEach((result, index) => {
+    const email = emails[index];
+    if (result.status === 'rejected') {
+      console.error(`📧 Alert email failed for ${email}:`, result.reason?.message || result.reason);
+    } else if (!result.value) {
+      console.error(`📧 Alert email not sent to ${email} — check Brevo API logs above`);
+    }
+  });
+
   const sent = results.filter((r) => r.status === 'fulfilled' && r.value).length;
-  console.log(`📧 Alert emails sent: ${sent}/${recipients.length}`);
+  console.log(`📧 Alert emails sent: ${sent}/${emails.length}`);
+}
+
+export async function getAlertNotifyUserIds(deviceUuid, eventType) {
+  const { userIds } = await resolveAlertRecipients(deviceUuid, eventType);
+  return userIds;
 }

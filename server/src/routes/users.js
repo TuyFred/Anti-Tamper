@@ -1,76 +1,142 @@
 import { Router } from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase.js';
 import {
   authenticate,
+  authenticateToken,
   requireApproved,
   requireAdmin,
 } from '../middleware/auth.js';
 import { getPermissions } from '../middleware/permissions.js';
+import { ensureUserProfile } from '../lib/profile.js';
+import { isValidPhone, normalizePhone } from '../lib/phone.js';
 
 const router = Router();
 
-/** Public customer registration — email confirmed so login works immediately */
-router.post('/register', async (req, res) => {
-  const { email, password, full_name } = req.body;
-
-  if (!email?.trim() || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
-
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email: normalizedEmail,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: full_name?.trim() || normalizedEmail },
+function authClient() {
+  const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  const anonKey = process.env.SUPABASE_ANON_KEY?.trim();
+  if (!url || !anonKey) return null;
+  return createClient(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
+}
 
-  if (authError) {
-    const msg = authError.message?.toLowerCase() || '';
-    if (msg.includes('already') || msg.includes('registered')) {
-      return res.status(400).json({ error: 'An account with this email already exists. Try signing in.' });
-    }
-    return res.status(400).json({ error: authError.message });
-  }
-
-  const userId = authData.user.id;
-
-  // Profile is created by DB trigger; ensure customer role + pending approval
-  const { data: customerRole } = await supabase
-    .from('roles')
-    .select('id')
-    .eq('name', 'customer')
-    .maybeSingle();
-
-  if (customerRole?.id) {
-    await supabase
-      .from('profiles')
-      .update({
-        full_name: full_name?.trim() || normalizedEmail,
-        role_id: customerRole.id,
-        is_approved: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId);
-  }
-
-  res.status(201).json({
-    success: true,
-    email: normalizedEmail,
-    message: 'Account created. A manager must approve your account before you can use deliveries.',
+/** @deprecated Use POST /api/auth/register/send-otp + /verify (customer OTP flow) */
+router.post('/register', async (req, res) => {
+  res.status(410).json({
+    error: 'Direct registration is disabled. Use email verification — register on the login page.',
+    code: 'USE_OTP_REGISTER',
   });
 });
 
-router.get('/me', authenticate, async (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
+  const profile = (await ensureUserProfile(req.user)) || req.profile;
+  if (!profile) {
+    return res.status(404).json({ error: 'Profile not found — contact support' });
+  }
   res.json({
     user: { id: req.user.id, email: req.user.email },
-    profile: req.profile,
-    permissions: getPermissions(req.profile),
+    profile,
+    permissions: getPermissions(profile),
+  });
+});
+
+/** Update own profile — name, email, phone, password */
+router.patch('/me', authenticate, requireApproved, async (req, res) => {
+  const {
+    full_name: fullName,
+    email,
+    phone,
+    current_password: currentPassword,
+    new_password: newPassword,
+  } = req.body;
+
+  const userId = req.user.id;
+  const authUpdates = {};
+  const profileUpdates = { updated_at: new Date().toISOString() };
+
+  if (fullName !== undefined) {
+    const trimmed = String(fullName).trim();
+    if (!trimmed) return res.status(400).json({ error: 'Full name cannot be empty' });
+    profileUpdates.full_name = trimmed;
+    authUpdates.user_metadata = {
+      ...(req.user.user_metadata || {}),
+      full_name: trimmed,
+    };
+  }
+
+  if (phone !== undefined) {
+    if (phone && !isValidPhone(phone)) {
+      return res.status(400).json({ error: 'Invalid phone — use format 0781234567 or +250781234567' });
+    }
+    profileUpdates.phone = phone ? normalizePhone(phone) : null;
+    authUpdates.user_metadata = {
+      ...(authUpdates.user_metadata || req.user.user_metadata || {}),
+      phone: profileUpdates.phone,
+    };
+  }
+
+  const normalizedEmail = email?.trim()?.toLowerCase();
+  if (normalizedEmail && normalizedEmail !== req.user.email?.toLowerCase()) {
+    authUpdates.email = normalizedEmail;
+    profileUpdates.email = normalizedEmail;
+  }
+
+  if (newPassword) {
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required to set a new password' });
+    }
+    const client = authClient();
+    if (!client) {
+      return res.status(503).json({ error: 'Password change is not configured on the server' });
+    }
+    const { error: verifyError } = await client.auth.signInWithPassword({
+      email: req.user.email,
+      password: currentPassword,
+    });
+    if (verifyError) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    authUpdates.password = newPassword;
+  }
+
+  if (Object.keys(authUpdates).length > 0) {
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, authUpdates);
+    if (authError) {
+      const msg = authError.message || 'Could not update account';
+      const status = /password|email|invalid/i.test(msg) ? 400 : 500;
+      return res.status(status).json({ error: msg });
+    }
+  }
+
+  let { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .update(profileUpdates)
+    .eq('id', userId)
+    .select('*, role:roles(id, name)')
+    .single();
+
+  if (profileError && profileUpdates.phone !== undefined && /phone/.test(profileError.message)) {
+    const { phone: _p, ...withoutPhone } = profileUpdates;
+    ({ data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .update(withoutPhone)
+      .eq('id', userId)
+      .select('*, role:roles(id, name)')
+      .single());
+  }
+
+  if (profileError) return res.status(500).json({ error: profileError.message });
+
+  res.json({
+    user: { id: userId, email: profile.email || req.user.email },
+    profile,
+    permissions: getPermissions(profile),
+    message: newPassword ? 'Profile and password updated' : 'Profile updated',
   });
 });
 

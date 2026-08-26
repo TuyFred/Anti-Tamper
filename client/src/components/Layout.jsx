@@ -2,17 +2,24 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, Shield } from 'lucide-react';
 import Sidebar from './Sidebar';
+import AlertToast from './AlertToast';
 
 const pageTitles = {
-  '/dashboard': { title: 'Dashboard' },
-  '/deliveries': { title: 'Deliveries' },
-  '/operations': { title: 'Operations' },
-  '/reports': { title: 'Reports & History' },
-  '/rider': { title: 'My Route' },
-  '/alerts': { title: 'Alerts' },
-  '/tracking': { title: 'Tracking' },
-  '/admin': { title: 'Users' },
-  '/admin/videos': { title: 'Promo Videos' },
+  '/dashboard': { title: 'Dashboard', wide: false },
+  '/deliveries': { title: 'Deliveries', wide: false },
+  '/deliveries/history': { title: 'Delivery history', wide: false },
+  '/orders': { title: 'Active orders', wide: false },
+  '/orders/history': { title: 'Order history', wide: false },
+  '/operations': { title: 'Operations', wide: false },
+  '/operations/tokens': { title: 'Opening requests', wide: false },
+  '/operations/opening-requests': { title: 'Opening requests', wide: false },
+  '/profile': { title: 'My profile', wide: false },
+  '/reports': { title: 'Reports & History', wide: false },
+  '/rider': { title: 'My Route', wide: true },
+  '/alerts': { title: 'Alerts', wide: false },
+  '/tracking': { title: 'Live Tracking', wide: true },
+  '/admin': { title: 'Users', wide: false },
+  '/admin/videos': { title: 'Promo Videos', wide: false },
 };
 
 export default function Layout({ children }) {
@@ -26,6 +33,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-surface">
+      <AlertToast />
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
@@ -57,7 +65,9 @@ export default function Layout({ children }) {
           <h2 className="text-xl font-bold text-white">{page.title}</h2>
         </header>
 
-        <main className="flex-1 p-4 sm:p-5 lg:p-6 overflow-y-auto overflow-x-hidden max-w-7xl w-full mx-auto">
+        <main className={`flex-1 p-4 sm:p-5 lg:p-6 overflow-y-auto overflow-x-hidden w-full mx-auto ${
+          page.wide ? 'max-w-[1600px]' : 'max-w-7xl'
+        }`}>
           {children}
         </main>
       </div>

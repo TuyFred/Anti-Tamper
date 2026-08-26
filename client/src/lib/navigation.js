@@ -16,21 +16,27 @@ export function getAppNavItems({ isManager, isCustomer, isRider }) {
   if (isCustomer) {
     return [
       { to: '/dashboard', label: 'Overview', icon: 'LayoutDashboard', section: 'main' },
-      { to: '/deliveries', label: 'Deliveries', icon: 'Package', section: 'control' },
+      { to: '/deliveries', label: 'Active deliveries', icon: 'Package', section: 'control' },
+      { to: '/deliveries/history', label: 'Completed / cancelled', icon: 'History', section: 'control' },
       { to: '/tracking', label: 'Tracking', icon: 'Radio', section: 'control' },
       { to: '/alerts', label: 'Alerts', icon: 'Bell', section: 'control', badgeKey: 'alerts' },
+      { to: '/profile', label: 'My profile', icon: 'User', section: 'account' },
     ];
   }
 
   if (isManager) {
     return [
       { to: '/dashboard', label: 'Overview', icon: 'LayoutDashboard', section: 'main' },
+      { to: '/orders', label: 'Active orders', icon: 'Package', section: 'control' },
+      { to: '/orders/history', label: 'Completed / cancelled', icon: 'History', section: 'control' },
       { to: '/operations', label: 'Operations', icon: 'ClipboardList', section: 'control' },
+      { to: '/operations/opening-requests', label: 'Opening requests', icon: 'Unlock', section: 'control' },
       { to: '/reports', label: 'Reports', icon: 'FileText', section: 'control' },
-      { to: '/tracking', label: 'Fleet', icon: 'Radio', section: 'control' },
+      { to: '/tracking', label: 'Fleet map', icon: 'Radio', section: 'control' },
       { to: '/alerts', label: 'Alerts', icon: 'Bell', section: 'control', badgeKey: 'alerts' },
       { to: '/admin', label: 'Users', icon: 'Users', section: 'control' },
       { to: '/admin/videos', label: 'Videos', icon: 'Video', section: 'control' },
+      { to: '/profile', label: 'My profile', icon: 'User', section: 'account' },
     ];
   }
 
@@ -40,6 +46,7 @@ export function getAppNavItems({ isManager, isCustomer, isRider }) {
       { to: '/rider', label: 'My Route', icon: 'Truck', section: 'control' },
       { to: '/tracking', label: 'Tracking', icon: 'Radio', section: 'control' },
       { to: '/alerts', label: 'Alerts', icon: 'Bell', section: 'control', badgeKey: 'alerts' },
+      { to: '/profile', label: 'My profile', icon: 'User', section: 'account' },
     ];
   }
 
@@ -47,6 +54,7 @@ export function getAppNavItems({ isManager, isCustomer, isRider }) {
     { to: '/dashboard', label: 'Overview', icon: 'LayoutDashboard', section: 'main' },
     { to: '/tracking', label: 'Tracking', icon: 'Radio', section: 'control' },
     { to: '/alerts', label: 'Alerts', icon: 'Bell', section: 'control', badgeKey: 'alerts' },
+    { to: '/profile', label: 'My profile', icon: 'User', section: 'account' },
   ];
 }
 

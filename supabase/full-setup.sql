@@ -365,6 +365,7 @@ ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS delivery_longitude
 ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS special_instructions TEXT;
 ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS token_sent_at TIMESTAMPTZ;
 ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS token_closed_at TIMESTAMPTZ;
+ALTER TABLE public.delivery_requests ADD COLUMN IF NOT EXISTS token_requested_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS public.promo_videos (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

@@ -1,20 +1,27 @@
 import { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ClipboardList, CheckCircle2, UserCheck, Lock, Unlock, Truck,
-  Loader2, Eye, Play, XCircle, Ban, Key, Mail, FileText,
+  Loader2, Eye, Play, XCircle, Ban, Key, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, downloadReportPdf } from '../lib/api';
 import Badge from '../components/ui/Badge';
 import PaymentProofModal from '../components/PaymentProofModal';
+import DeliveryContactBlock from '../components/DeliveryContactBlock';
+import Pagination from '../components/ui/Pagination';
+import ContentSkeleton from '../components/ui/ContentSkeleton';
+import { useDeliveriesCache } from '../hooks/useDeliveriesCache';
+import { usePagination } from '../hooks/usePagination';
 import {
   deliveryStatusMeta, formatPrice, formatDeliveryRef, formatDeliveryDate,
-  formatDeliveryDateTime, paymentMethodLabel,
+  formatDeliveryDateTime, paymentMethodLabel, formatLockStatusLabel,
+  isActiveDelivery,
 } from '../lib/deliveryUtils';
 
 const TABS = [
   { id: 'payments', label: 'Payment proofs' },
-  { id: 'all', label: 'All deliveries' },
+  { id: 'active', label: 'Active deliveries' },
 ];
 
 function AddressBlock({ label, address, accent }) {
@@ -30,10 +37,10 @@ function AddressBlock({ label, address, accent }) {
 
 export default function Operations() {
   const { token } = useAuth();
-  const [deliveries, setDeliveries] = useState([]);
+  const { deliveries, loading: deliveriesLoading, refresh } = useDeliveriesCache();
   const [riders, setRiders] = useState([]);
   const [devices, setDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [metaLoading, setMetaLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [tab, setTab] = useState('payments');
@@ -41,26 +48,29 @@ export default function Operations() {
   const [actionId, setActionId] = useState(null);
   const [proofView, setProofView] = useState(null);
 
-  const load = async () => {
+  const loadMeta = async () => {
     try {
-      const [list, users, devs] = await Promise.all([
-        api.getDeliveries(token),
+      const [users, devs] = await Promise.all([
         api.getUsers(token),
         api.getDevices(token),
       ]);
-      setDeliveries(list);
       setRiders(users.filter((u) => u.role?.name === 'motor_rider' && u.is_approved));
       setDevices(devs);
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setMetaLoading(false);
     }
   };
 
   useEffect(() => {
-    if (token) load();
+    if (token) loadMeta();
   }, [token]);
+
+  const load = async () => {
+    await refresh(true);
+    await loadMeta();
+  };
 
   const runAction = async (fn, id) => {
     setActionId(id || 'busy');
@@ -76,12 +86,26 @@ export default function Operations() {
     }
   };
 
-  const pendingPayments = useMemo(
-    () => deliveries.filter((d) => d.status === 'payment_submitted'),
+  const pendingPaymentCount = useMemo(
+    () => deliveries.filter((d) => d.status === 'payment_submitted').length,
     [deliveries],
   );
 
-  const list = tab === 'payments' ? pendingPayments : deliveries;
+  const tokenRequestCount = useMemo(
+    () => deliveries.filter((d) => d.token_request_pending).length,
+    [deliveries],
+  );
+
+  const list = useMemo(() => {
+    if (tab === 'payments') {
+      return deliveries.filter((d) => d.status === 'payment_submitted');
+    }
+    return deliveries.filter((d) => isActiveDelivery(d.status));
+  }, [deliveries, tab]);
+
+  const pagination = usePagination(list);
+
+  const loading = deliveriesLoading && deliveries.length === 0 && metaLoading;
 
   const handleVerify = (id) => runAction(() => api.verifyPayment(token, id), id);
   const handleRejectPayment = (id) => runAction(() => api.rejectPayment(token, id), id);
@@ -105,16 +129,12 @@ export default function Operations() {
 
   const handleSendToken = (id) => runAction(async () => {
     const result = await api.sendDeliveryToken(token, id);
-    if (result?.message) setSuccess(result.message);
+    setSuccess(result?.message || 'Unlock code sent successfully — customer can see and use it on Dashboard / Deliveries.');
     return result;
   }, id);
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-      </div>
-    );
+    return <ContentSkeleton rows={4} />;
   }
 
   return (
@@ -131,36 +151,68 @@ export default function Operations() {
           <ClipboardList className="w-5 h-5 text-primary-light" />
           Operations
         </h3>
-        {pendingPayments.length > 0 && (
-          <span className="text-sm text-warning font-medium">{pendingPayments.length} pending</span>
+        {pendingPaymentCount > 0 && (
+          <span className="text-sm text-warning font-medium">{pendingPaymentCount} pending</span>
+        )}
+        {tokenRequestCount > 0 && (
+          <Link
+            to="/operations/opening-requests"
+            className="text-sm font-medium text-warning hover:underline"
+          >
+            {tokenRequestCount} box opening request{tokenRequestCount !== 1 ? 's' : ''} →
+          </Link>
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition touch-manipulation ${
               tab === t.id ? 'bg-primary text-white' : 'bg-surface border border-border text-slate-400'
             }`}
           >
             {t.label}
-            {t.id === 'payments' && pendingPayments.length > 0 && (
-              <span className="ml-1.5 opacity-80">({pendingPayments.length})</span>
+            {t.id === 'payments' && pendingPaymentCount > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-warning/20 text-warning text-xs">
+                {pendingPaymentCount}
+              </span>
             )}
           </button>
         ))}
+        <Link
+          to="/operations/opening-requests"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition touch-manipulation border ${
+            tokenRequestCount > 0
+              ? 'bg-warning/10 border-warning/30 text-warning'
+              : 'bg-surface border-border text-slate-400'
+          }`}
+        >
+          Opening requests
+          {tokenRequestCount > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-warning/20 text-warning text-xs">
+              {tokenRequestCount}
+            </span>
+          )}
+        </Link>
       </div>
 
-      {list.length === 0 ? (
-        <div className="glass-card rounded-xl p-10 text-center text-slate-500 text-sm">
-          {tab === 'payments' ? 'No payment proofs pending.' : 'No deliveries.'}
+      {tab === 'payments' && pendingPaymentCount === 0 && (
+        <div className="glass-card rounded-xl p-8 text-center text-slate-400 text-sm">
+          No payment proofs pending.
         </div>
-      ) : (
+      )}
+
+      {list.length === 0 && tab === 'active' ? (
+        <div className="glass-card rounded-xl p-10 text-center text-slate-500 text-sm">
+          No active deliveries.
+        </div>
+      ) : list.length > 0 && (
+        <>
         <div className="space-y-3">
-          {list.map((d) => {
+          {pagination.slice.map((d) => {
             const meta = deliveryStatusMeta(d.status);
             const isPending = d.status === 'payment_submitted';
 
@@ -189,6 +241,10 @@ export default function Operations() {
                   <AddressBlock label="A" address={d.pickup_address} accent="a" />
                   <AddressBlock label="B" address={d.delivery_address} accent="b" />
                 </div>
+
+                {d.customer && (
+                  <DeliveryContactBlock title="Customer contact" person={d.customer} />
+                )}
 
                 <p className="text-xs text-slate-500">
                   {formatPrice(d.calculated_price, d.currency)} · {d.distance_km} km
@@ -237,7 +293,7 @@ export default function Operations() {
                   </div>
                 )}
 
-                {tab === 'all' && !['delivered', 'cancelled'].includes(d.status) && !isPending && (
+                {tab === 'active' && !['delivered', 'cancelled'].includes(d.status) && !isPending && (
                   <button
                     type="button"
                     onClick={() => handleCancel(d.id)}
@@ -249,7 +305,7 @@ export default function Operations() {
                   </button>
                 )}
 
-                {['payment_verified', 'rider_assigned'].includes(d.status) && tab === 'all' && (
+                {['payment_verified', 'rider_assigned'].includes(d.status) && tab === 'active' && (
                   <div className="p-3 rounded-xl bg-surface border border-border space-y-3">
                     <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                       <Truck className="w-3.5 h-3.5 text-primary-light" />
@@ -299,53 +355,49 @@ export default function Operations() {
                   </div>
                 )}
 
-                {d.rider && tab === 'all' && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-slate-400 flex items-center gap-1 flex-wrap">
-                      <Truck className="w-3.5 h-3.5" />
-                      Route: {d.rider.full_name || d.rider.email}
-                      {d.device && ` · Box ${d.device.device_id}`}
-                    </p>
-                    {(d.token_delivery || d.customer_token_sent) && ['rider_assigned', 'in_transit'].includes(d.status) && (
-                      <div className="p-3 rounded-xl bg-warning/5 border border-warning/20 space-y-1.5">
+                {d.rider && tab === 'active' && (
+                  <div className="space-y-2">
+                    <DeliveryContactBlock title="Assigned rider" person={d.rider} variant="rider" />
+                    {d.device && (
+                      <p className="text-xs text-slate-400 flex items-center gap-1">
+                        <Truck className="w-3.5 h-3.5" />
+                        Smart Box: {d.device.device_id}
+                      </p>
+                    )}
+                    {d.token_request_pending && (
+                      <Link
+                        to="/operations/opening-requests"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning hover:underline"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        Customer requested box opening — review in Opening requests
+                      </Link>
+                    )}
+                    {d.device_id && ['rider_assigned', 'in_transit', 'payment_verified'].includes(d.status) && !d.token_request_pending && (
+                      <div className="p-3 rounded-xl border bg-warning/5 border-warning/20 space-y-1.5">
                         <p className="text-xs font-semibold text-warning flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5" />
-                          Unlock code sent to customer inbox
+                          <Key className="w-3.5 h-3.5" />
+                          {(d.token_delivery || d.customer_token_sent)
+                            ? 'Unlock code sent to customer'
+                            : d.token_closed_at
+                              ? 'Previous code used — send a new one'
+                              : 'Send unlock code to customer'}
                         </p>
-                        <p className="text-[11px] text-slate-300">
-                          To:{' '}
-                          <span className="font-medium text-white">
-                            {d.token_delivery?.recipient_name || d.customer?.full_name || 'Customer'}
-                          </span>
-                          {(d.token_delivery?.recipient_email || d.customer?.email) && (
-                            <span className="text-slate-400"> · {d.token_delivery?.recipient_email || d.customer?.email}</span>
-                          )}
-                        </p>
-                        {(d.token_delivery?.sent_at || d.token_sent_at) && (
-                          <p className="text-[10px] text-slate-500">
-                            Sent {formatDeliveryDateTime(d.token_delivery?.sent_at || d.token_sent_at)}
-                          </p>
-                        )}
-                        <p className="text-[10px] text-slate-500">
-                          Customer opens at delivery B once, then closes — code expires (one-time use).
-                        </p>
-                        {!d.token_closed_at && (
-                          <button
-                            type="button"
-                            onClick={() => handleSendToken(d.id)}
-                            disabled={!!actionId || !d.device_id}
-                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/10 border border-warning/25 text-xs font-medium text-warning hover:bg-warning/15 disabled:opacity-50"
-                          >
-                            <Key className="w-3.5 h-3.5" />
-                            {d.customer_token_sent ? 'Resend unlock code' : 'Send unlock code'}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleSendToken(d.id)}
+                          disabled={!!actionId || !d.device_id}
+                          className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/10 border border-warning/25 text-warning text-xs font-medium disabled:opacity-50"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                          Send unlock code
+                        </button>
                       </div>
                     )}
                   </div>
                 )}
 
-                {d.status === 'rider_assigned' && tab === 'all' && (
+                {d.status === 'rider_assigned' && tab === 'active' && (
                   <button
                     type="button"
                     onClick={() => handleStartTransit(d.id)}
@@ -357,13 +409,23 @@ export default function Operations() {
                   </button>
                 )}
 
-                {d.device && tab === 'all' && ['rider_assigned', 'in_transit'].includes(d.status) && (
+                {d.device && tab === 'active' && ['rider_assigned', 'in_transit'].includes(d.status) && (
                   <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-                    <span className="text-xs text-slate-500 self-center">{d.device.lock_status}</span>
-                    <button type="button" onClick={() => runAction(() => api.managerUnlockDelivery(token, d.id), d.id)} disabled={!!actionId} className="px-2 py-1 text-xs text-success border border-success/25 rounded-lg">
+                    <span className="text-xs text-slate-500 self-center">
+                      {formatLockStatusLabel(d.device.lock_status)}
+                    </span>
+                    <button type="button" onClick={() => runAction(async () => {
+                      const result = await api.managerUnlockDelivery(token, d.id);
+                      setSuccess(result?.message || 'Box unlocked — you can open it');
+                      return result;
+                    }, d.id)} disabled={!!actionId || d.device.lock_status === 'unlocked'} className="px-2 py-1 text-xs text-success border border-success/25 rounded-lg disabled:opacity-40">
                       <Unlock className="w-3 h-3 inline" /> Unlock
                     </button>
-                    <button type="button" onClick={() => runAction(() => api.managerLockDelivery(token, d.id), d.id)} disabled={!!actionId} className="px-2 py-1 text-xs text-primary-light border border-primary/25 rounded-lg">
+                    <button type="button" onClick={() => runAction(async () => {
+                      const result = await api.managerLockDelivery(token, d.id);
+                      setSuccess(result?.message || 'Box locked — secured');
+                      return result;
+                    }, d.id)} disabled={!!actionId || d.device.lock_status === 'locked'} className="px-2 py-1 text-xs text-primary-light border border-primary/25 rounded-lg disabled:opacity-40">
                       <Lock className="w-3 h-3 inline" /> Lock
                     </button>
                   </div>
@@ -372,6 +434,17 @@ export default function Operations() {
             );
           })}
         </div>
+        <Pagination
+          page={pagination.page}
+          totalPages={pagination.totalPages}
+          onPageChange={pagination.setPage}
+          total={pagination.total}
+          rangeStart={pagination.rangeStart}
+          rangeEnd={pagination.rangeEnd}
+          hasPrev={pagination.hasPrev}
+          hasNext={pagination.hasNext}
+        />
+        </>
       )}
 
       <PaymentProofModal

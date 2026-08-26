@@ -68,6 +68,7 @@ CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
   full_name TEXT,
+  phone TEXT,
   role_id UUID REFERENCES public.roles(id),
   is_approved BOOLEAN DEFAULT FALSE,
   approved_by UUID REFERENCES auth.users(id),
