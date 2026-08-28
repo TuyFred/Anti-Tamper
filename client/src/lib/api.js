@@ -2,6 +2,19 @@ import { getApiBaseUrl } from './runtimeConfig';
 
 const API_URL = getApiBaseUrl();
 
+function networkError(path) {
+  const hosted = typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/i.test(window.location.hostname);
+  const error = new Error(
+    hosted
+      ? 'Cannot reach the API. Wait ~30 seconds if the server is waking up, then retry.'
+      : path.startsWith('/api/auth/login')
+        ? 'Cannot reach the API server. Start it with: cd server && npm run dev'
+        : 'Network error — is the server running on port 3001?',
+  );
+  error.code = 'NETWORK_ERROR';
+  return error;
+}
+
 export async function apiFetch(path, options = {}, token) {
   const headers = {
     'Content-Type': 'application/json',
@@ -12,17 +25,34 @@ export async function apiFetch(path, options = {}, token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const attempts = typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/i.test(window.location.hostname)
+    ? 3
+    : 1;
   let res;
-  try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers });
-  } catch (err) {
-    const network = new Error(
-      path.startsWith('/api/auth/login')
-        ? 'Cannot reach the API server. Start it with: cd server && npm run dev'
-        : 'Network error — is the server running on port 3001?',
-    );
-    network.code = 'NETWORK_ERROR';
-    throw network;
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      res = await fetch(`${API_URL}${path}`, { ...options, headers });
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        lastError = networkError(path);
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, 4000 * attempt));
+          continue;
+        }
+        throw lastError;
+      }
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err.code === 'NETWORK_ERROR' ? err : networkError(path);
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 4000 * attempt));
+        continue;
+      }
+      throw lastError;
+    }
   }
 
   const data = await res.json().catch(() => ({}));

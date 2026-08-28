@@ -1,11 +1,31 @@
-# Deployment Guide — Vercel (client) + Render (server)
+# Deployment Guide — Vercel (client) + Render (API + website)
 
 ## Your live URLs
 
 | Service | URL |
 |---------|-----|
+| **Website (recommended)** | https://anti-tamper.onrender.com |
 | **Client (Vercel)** | https://anti-tamper.vercel.app |
-| **API (Render)** | `https://YOUR-SERVICE-NAME.onrender.com` (see Render dashboard → your service → top URL bar) |
+| **API health** | https://anti-tamper.onrender.com/health |
+
+Use the **Render URL** if Vercel does not open on your network. After a deploy, the same Render service serves the homepage and `/api`.
+
+If the first visit is slow (~30–50s), the free Render instance is waking up — wait and refresh.
+
+### Render settings so the website is served from the API
+
+In [Render Dashboard](https://dashboard.render.com) → your web service → **Settings**:
+
+- **Root Directory:** empty (repository root, not `server`)
+- **Build Command:** `npm install --prefix server && npm install --prefix client && node scripts/render-build.mjs`
+- **Start Command:** `npm start --prefix server`
+- **Health Check Path:** `/health`
+
+Add env var `SUPABASE_ANON_KEY` (same public anon key as Vercel `VITE_SUPABASE_ANON_KEY`) so Render can build the frontend.
+
+Then **Manual Deploy** → Deploy latest commit.
+
+---
 
 `dep-d9ggb6cvikkc73d7uqv0` is Render’s **internal service ID**, not the public API URL.  
 Open [Render Dashboard](https://dashboard.render.com) → your web service → copy the URL shown at the top (e.g. `https://anti-tamper-xxxx.onrender.com`).

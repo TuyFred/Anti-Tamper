@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Anti-Tamper Smart Delivery Box Platform - Full-stack IoT tracking",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
+    "build:render": "node scripts/render-build.mjs",
     "start": "cd server && npm start"
   }
 }

@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
@@ -98,6 +99,25 @@ app.use('/api/alerts', alertsRouter);
 app.use('/api/locations', locationsRouter);
 app.use('/api/reports', reportsRouter);
 
+const frontendDist = path.resolve(__dirname, '../../client/dist');
+const frontendIndex = path.join(frontendDist, 'index.html');
+const frontendReady = fs.existsSync(frontendIndex);
+if (frontendReady) {
+  app.use(express.static(frontendDist, { index: false, maxAge: '1h' }));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (
+      req.path.startsWith('/api')
+      || req.path.startsWith('/uploads')
+      || req.path.startsWith('/socket.io')
+      || req.path === '/health'
+    ) {
+      return next();
+    }
+    res.sendFile(frontendIndex);
+  });
+}
+
 const io = initSocket(httpServer);
 setDeliveryIo(io);
 initMqtt(io);
@@ -116,6 +136,11 @@ httpServer.listen(config.port, '0.0.0.0', async () => {
   console.log(`📡 MQTT broker: ${config.mqtt.brokerUrl}`);
   console.log(`🌐 CORS origins: ${config.clientOrigins.join(', ')} (+ *.vercel.app)`);
   console.log(`🔗 Public URL: ${config.publicBaseUrl}`);
+  if (frontendReady) {
+    console.log(`🌐 Website: ${config.publicBaseUrl}/ (same server as API)`);
+  } else {
+    console.log('🌐 Website bundle not built — API only. On Render, set SUPABASE_ANON_KEY so the client can be compiled.');
+  }
   if (usesBrevoApi()) {
     const brevo = await verifyBrevoApiKey();
     if (brevo.ok) {

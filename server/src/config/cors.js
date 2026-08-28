@@ -47,6 +47,7 @@ export function isAllowedClientOrigin(origin) {
   const host = hostnameFromOrigin(origin);
   if (host === 'localhost' || host === '127.0.0.1') return true;
   if (host.endsWith('.vercel.app')) return true;
+  if (host.endsWith('.onrender.com')) return true;
 
   return false;
 }

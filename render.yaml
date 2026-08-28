@@ -7,9 +7,9 @@ services:
     runtime: node
     region: frankfurt
     plan: free
-    rootDir: server
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    rootDir: .
+    buildCommand: npm install --prefix server && npm install --prefix client && node scripts/render-build.mjs
+    startCommand: npm start --prefix server
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -18,6 +18,8 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
         sync: false
       - key: CLIENT_URL
         sync: false
@@ -30,7 +32,13 @@ services:
       - key: MQTT_PASSWORD
         sync: false
       - key: EMAIL_ENABLED
-        value: "false"
+        value: "true"
+      - key: BREVO_API_KEY
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: Smart Box Delivery
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -38,8 +46,6 @@ services:
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
         sync: false
       - key: MOMO_PAY_NUMBER
         sync: false
