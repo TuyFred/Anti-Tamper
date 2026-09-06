@@ -1,0 +1,1 @@
+import{j as r}from"./react-vendor-B19sYB6i.js";function n({rows:e=3}){return r.jsx("div",{className:"space-y-3 animate-pulse",children:Array.from({length:e},(a,s)=>r.jsx("div",{className:"glass-card rounded-xl h-24 border border-border/60 bg-surface/40"},s))})}export{n as C};

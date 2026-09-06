@@ -1,0 +1,1 @@
+function r(n){if(!n)return null;const t=String(n).replace(/\D/g,"");return t.length<9?null:t.startsWith("250")?`+${t}`:t.startsWith("0")?`+250${t.slice(1)}`:t.length===9?`+250${t}`:`+${t}`}function e(n){return r(n)||n||""}function i(n){const t=r(n);return t?`tel:${t}`:null}export{e as f,i as p};

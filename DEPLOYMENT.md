@@ -4,8 +4,10 @@
 
 | Service | URL |
 |---------|-----|
-| **Website (recommended)** | https://anti-tamper.onrender.com |
+| **Website (use this if Vercel times out)** | https://anti-tamper.onrender.com |
 | **Client (Vercel)** | https://anti-tamper.vercel.app |
+
+On some Rwanda networks `anti-tamper.vercel.app` never connects (`ERR_CONNECTION_TIMED_OUT`). That is a path to Vercel, not a broken app. Open **https://anti-tamper.onrender.com** instead.
 | **API health** | https://anti-tamper.onrender.com/health |
 
 Use the **Render URL** if Vercel does not open on your network. After a deploy, the same Render service serves the homepage and `/api`.

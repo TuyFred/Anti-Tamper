@@ -99,9 +99,13 @@ app.use('/api/alerts', alertsRouter);
 app.use('/api/locations', locationsRouter);
 app.use('/api/reports', reportsRouter);
 
-const frontendDist = path.resolve(__dirname, '../../client/dist');
-const frontendIndex = path.join(frontendDist, 'index.html');
-const frontendReady = fs.existsSync(frontendIndex);
+const frontendCandidates = [
+  path.resolve(__dirname, '../web'),
+  path.resolve(__dirname, '../../client/dist'),
+];
+const frontendDist = frontendCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+const frontendIndex = frontendDist ? path.join(frontendDist, 'index.html') : '';
+const frontendReady = Boolean(frontendIndex);
 if (frontendReady) {
   app.use(express.static(frontendDist, { index: false, maxAge: '1h' }));
   app.use((req, res, next) => {
