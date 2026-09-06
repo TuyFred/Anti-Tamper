@@ -11,7 +11,7 @@ import { verifyBrevoApiKey } from './services/brevo.js';
 import { usesBrevoApi } from './services/email.js';
 import { corsOriginCallback } from './config/cors.js';
 import { initSocket } from './socket/index.js';
-import { initMqtt, shutdownMqtt } from './mqtt/handler.js';
+import { initMqtt, shutdownMqtt, isMqttConnected } from './mqtt/handler.js';
 import { setDeliveryIo } from './lib/deliveryNotify.js';
 import usersRouter from './routes/users.js';
 import authRouter from './routes/auth.js';
@@ -48,6 +48,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
 app.get('/health', async (_req, res) => {
   const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
   const database = await checkDatabase(supabase);
+  const mqttOk = isMqttConnected();
   const healthy = database.connected;
 
   res.status(healthy ? 200 : 503).json({
@@ -59,6 +60,13 @@ app.get('/health', async (_req, res) => {
       enabled: config.email.enabled,
       provider: usesBrevoApi() ? 'brevo-api' : config.email.user ? 'smtp' : 'off',
       from: config.email.from || null,
+    },
+    mqtt: {
+      connected: mqttOk,
+      broker: config.mqtt.brokerUrl || null,
+      note: mqttOk
+        ? 'Server can send open/close commands'
+        : 'Open/close will fail until MQTT reconnects and ESP32 is online',
     },
     supabase: {
       url: supabaseUrl || null,

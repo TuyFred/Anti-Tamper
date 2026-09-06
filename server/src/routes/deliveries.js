@@ -115,7 +115,11 @@ async function lockDevice(deviceRow) {
   try {
     sendDeviceCommand(deviceRow.device_id, 'lock');
   } catch (err) {
-    throw new Error(err.message || 'MQTT offline — cannot lock. Check MQTT connection.');
+    throw new Error(
+      err.message === 'MQTT client not connected'
+        ? 'Hardware link offline — Smart Box did not receive close command. Check ESP32 WiFi/MQTT, then try again.'
+        : (err.message || 'MQTT offline — cannot lock. Check MQTT connection.'),
+    );
   }
   const updatedAt = new Date().toISOString();
   await supabase
@@ -130,14 +134,14 @@ async function unlockDevice(deviceRow, userId) {
   if (!deviceRow?.device_id) {
     throw new Error('No Smart Box assigned to this delivery');
   }
-  let mqttSent = false;
-  let mqttError = null;
   try {
     sendDeviceCommand(deviceRow.device_id, 'unlock', { authorized: true, user_id: userId });
-    mqttSent = true;
   } catch (err) {
-    mqttError = err.message || 'MQTT offline';
-    console.warn(`MQTT unlock failed for ${deviceRow.device_id}:`, mqttError);
+    throw new Error(
+      err.message === 'MQTT client not connected'
+        ? 'Hardware link offline — Smart Box did not receive open command. Check ESP32 WiFi/MQTT, then try again.'
+        : (err.message || 'Cannot send open command to Smart Box'),
+    );
   }
   const updatedAt = new Date().toISOString();
   await supabase
@@ -145,7 +149,7 @@ async function unlockDevice(deviceRow, userId) {
     .update({ lock_status: 'unlocked', updated_at: updatedAt })
     .eq('id', deviceRow.id);
   broadcastDeviceUpdate({ ...deviceRow, lock_status: 'unlocked', updated_at: updatedAt, is_online: true });
-  return { mqttSent, mqttError };
+  return { mqttSent: true };
 }
 
 async function issueUnlockToken(delivery, actorId, summary, options = {}) {
@@ -778,13 +782,12 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
       : 'Smart Box opened — retrieve your items, then tap Close Smart Box when done.';
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: unlockResult.mqttSent
-        ? baseMessage
-        : `${baseMessage} (Hardware link offline — if the box did not open, try again when online or ask manager.)`,
-      mqttSent: unlockResult.mqttSent,
+      message: baseMessage,
+      mqttSent: true,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    const offline = /Hardware link offline|MQTT/i.test(err.message || '');
+    return res.status(offline ? 503 : 500).json({ error: err.message });
   }
 });
 
@@ -901,13 +904,15 @@ router.post('/:id/manager-lock', authenticate, requireApproved, requireManager, 
 router.post('/:id/manager-unlock', authenticate, requireApproved, requireManager, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery?.device) return res.status(404).json({ error: 'No device on this delivery' });
-  const result = await unlockDevice(delivery.device, req.user.id);
+  try {
+    await unlockDevice(delivery.device, req.user.id);
+  } catch (err) {
+    return res.status(503).json({ error: err.message || 'Could not unlock Smart Box' });
+  }
   res.json({
     success: true,
-    mqttSent: result.mqttSent,
-    message: result.mqttSent
-      ? 'Smart Box unlocked remotely'
-      : 'Unlock saved in dashboard — hardware command sends when MQTT reconnects',
+    mqttSent: true,
+    message: 'Smart Box unlocked remotely — open command sent to hardware',
   });
 });
 

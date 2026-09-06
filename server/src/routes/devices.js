@@ -154,7 +154,9 @@ router.post('/:deviceId/lock', authenticate, requireApproved, async (req, res) =
   const { deviceId } = req.params;
   const canControl = await canAccessDevice(req.user.id, deviceId, true);
   if (!canControl) {
-    return res.status(403).json({ error: 'Only admins and managers can lock boxes remotely' });
+    return res.status(403).json({
+      error: 'No lock permission for this device — assigned riders need open permission first',
+    });
   }
 
   const { data: device, error } = await supabase
