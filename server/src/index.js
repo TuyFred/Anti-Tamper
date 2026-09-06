@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { config, supabase } from './config/supabase.js';
 import { initDeliverySelect } from './lib/deliverySelect.js';
+import { checkDatabase, formatDatabaseLog } from './lib/dbHealth.js';
 import { verifyBrevoApiKey } from './services/brevo.js';
 import { usesBrevoApi } from './services/email.js';
 import { corsOriginCallback } from './config/cors.js';
@@ -46,33 +47,11 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
 
 app.get('/health', async (_req, res) => {
   const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-  let supabaseOk = false;
-  let supabaseError = null;
+  const database = await checkDatabase(supabase);
+  const healthy = database.connected;
 
-  if (supabaseUrl) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch(`${supabaseUrl}/auth/v1/health`, {
-        signal: controller.signal,
-        headers: process.env.SUPABASE_ANON_KEY
-          ? { apikey: process.env.SUPABASE_ANON_KEY.trim() }
-          : {},
-      });
-      clearTimeout(timer);
-      supabaseOk = response.ok;
-      if (!response.ok) supabaseError = `HTTP ${response.status}`;
-    } catch (err) {
-      supabaseError = err?.cause?.code === 'ENOTFOUND'
-        ? 'Project URL does not exist (check SUPABASE_URL)'
-        : (err.message || 'Unreachable');
-    }
-  } else {
-    supabaseError = 'SUPABASE_URL not set';
-  }
-
-  res.status(supabaseOk ? 200 : 503).json({
-    status: supabaseOk ? 'ok' : 'degraded',
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : database.status,
     service: 'anti-tamper-server',
     timestamp: new Date().toISOString(),
     env: config.nodeEnv,
@@ -83,8 +62,18 @@ app.get('/health', async (_req, res) => {
     },
     supabase: {
       url: supabaseUrl || null,
-      reachable: supabaseOk,
-      error: supabaseError,
+      reachable: database.connected,
+      error: database.error,
+    },
+    database: {
+      provider: 'supabase',
+      connected: database.connected,
+      status: database.status,
+      latencyMs: database.latencyMs,
+      project: database.project,
+      configured: database.configured,
+      tables: database.tables,
+      error: database.error,
     },
   });
 });
@@ -136,7 +125,9 @@ httpServer.on('error', (err) => {
 
 httpServer.listen(config.port, '0.0.0.0', async () => {
   await initDeliverySelect(supabase);
+  const database = await checkDatabase(supabase);
   console.log(`🚀 Anti-Tamper Server running on port ${config.port}`);
+  console.log(`🗄️  ${formatDatabaseLog(database)}`);
   console.log(`📡 MQTT broker: ${config.mqtt.brokerUrl}`);
   console.log(`🌐 CORS origins: ${config.clientOrigins.join(', ')} (+ *.vercel.app)`);
   console.log(`🔗 Public URL: ${config.publicBaseUrl}`);
