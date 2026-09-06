@@ -28,6 +28,11 @@ export function useDeliveriesCache() {
       setDeliveries(memoryCache.data);
       return memoryCache.data;
     } catch (err) {
+      if (err?.status === 401) {
+        memoryCache = { token: null, data: null };
+        setDeliveries([]);
+        return [];
+      }
       console.error(err);
       return memoryCache.data || [];
     } finally {

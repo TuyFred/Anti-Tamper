@@ -61,6 +61,12 @@ export async function apiFetch(path, options = {}, token) {
     const error = new Error(data.error || 'Request failed');
     error.status = res.status;
     error.code = data.code;
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:expired', {
+        detail: { path, message: error.message },
+      }));
+      error.message = 'Session expired — please sign in again';
+    }
     throw error;
   }
 

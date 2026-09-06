@@ -72,6 +72,12 @@ export default function Login() {
   }, [session, authLoading, navigate]);
 
   useEffect(() => {
+    if (searchParams.get('reason') === 'session') {
+      setError('Your session expired. Please sign in again.');
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (resendWait <= 0) return undefined;
     const timer = setTimeout(() => setResendWait((s) => s - 1), 1000);
     return () => clearTimeout(timer);

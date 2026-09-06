@@ -51,7 +51,25 @@ export function AuthProvider({ children }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    const onAuthExpired = async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        clearStaleAuthSession();
+      }
+      setSession(null);
+      setProfile(null);
+      setPermissions([]);
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login?reason=session');
+      }
+    };
+    window.addEventListener('auth:expired', onAuthExpired);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('auth:expired', onAuthExpired);
+    };
   }, [loadProfile]);
 
   const signIn = async (email, password) => {
