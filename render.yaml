@@ -22,9 +22,11 @@ services:
       - key: SUPABASE_ANON_KEY
         sync: false
       - key: CLIENT_URL
-        sync: false
+        value: https://anti-tamper.onrender.com
+      - key: CLIENT_URLS
+        value: https://anti-tamper.vercel.app,http://localhost:5173
       - key: PUBLIC_BASE_URL
-        sync: false
+        value: https://anti-tamper.onrender.com
       - key: MQTT_BROKER_URL
         sync: false
       - key: MQTT_USERNAME

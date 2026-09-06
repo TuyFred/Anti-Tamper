@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
-  Truck, MapPin, Play, Package, Loader2, Navigation,
+  Truck, Play, Package, Loader2, Navigation,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import Badge from '../components/ui/Badge';
 import RiderRouteMap from '../components/RiderRouteMap';
+import RiderOpenPanel from '../components/RiderOpenPanel';
 import DeliveryContactBlock from '../components/DeliveryContactBlock';
 import {
   deliveryStatusMeta, formatPrice, formatDeliveryRef, formatDeliveryDate,
@@ -29,6 +30,7 @@ export default function RiderRoute() {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [actionId, setActionId] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
 
@@ -82,6 +84,9 @@ export default function RiderRoute() {
       {error && (
         <div className="p-3 bg-danger/10 border border-danger/25 rounded-xl text-sm text-danger">{error}</div>
       )}
+      {success && (
+        <div className="p-3 bg-success/10 border border-success/25 rounded-xl text-sm text-success">{success}</div>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -101,6 +106,7 @@ export default function RiderRoute() {
             {active.map((d) => {
               const meta = deliveryStatusMeta(d.status);
               const isSelected = selected?.id === d.id;
+              const openState = d.open_permission || 'waiting';
               return (
                 <button
                   key={d.id}
@@ -119,6 +125,16 @@ export default function RiderRoute() {
                   </p>
                   <p className="text-xs text-slate-400 truncate">
                     <span className="text-primary-light font-medium">B</span> {d.delivery_address}
+                  </p>
+                  <p className={`text-[10px] mt-1.5 font-medium ${
+                    openState === 'granted' ? 'text-success'
+                      : openState === 'used' ? 'text-slate-500'
+                        : 'text-amber-300'
+                  }`}
+                  >
+                    {openState === 'granted' ? 'Open permission: granted'
+                      : openState === 'used' ? 'Open code used'
+                        : 'Open permission: waiting'}
                   </p>
                   <p className="text-[10px] text-slate-500 mt-1">{formatDeliveryDate(d.created_at)}</p>
                 </button>
@@ -145,7 +161,9 @@ export default function RiderRoute() {
               )}
 
               {selected.device && (
-                <p className="text-xs text-slate-400 font-mono">Smart Box: {selected.device.device_id} · {selected.device.lock_status}</p>
+                <p className="text-xs text-slate-400 font-mono">
+                  Smart Box: {selected.device.device_id} · {selected.device.lock_status}
+                </p>
               )}
 
               <RiderRouteMap delivery={selected} height="min(380px, 55vh)" live />
@@ -155,9 +173,15 @@ export default function RiderRoute() {
                 <AddressCard label="Delivery B — hand off to customer" address={selected.delivery_address} accent="delivery" />
               </div>
 
-              <p className="text-[11px] text-slate-500 p-2.5 rounded-lg bg-surface border border-border leading-relaxed">
-                Your job is transport only (A → B). The customer unlocks the Smart Box at delivery B with their personal token — you cannot open the box.
-              </p>
+              {isRider && (
+                <RiderOpenPanel
+                  delivery={selected}
+                  authToken={token}
+                  onUpdated={load}
+                  onError={(msg) => { setError(msg || ''); setSuccess(''); }}
+                  onSuccess={(msg) => { setSuccess(msg || ''); setError(''); }}
+                />
+              )}
 
               {selected.special_instructions && (
                 <p className="text-xs text-slate-400 p-3 rounded-lg bg-surface border border-border">
@@ -180,7 +204,8 @@ export default function RiderRoute() {
 
               {selected.status === 'in_transit' && (
                 <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/25 text-xs text-primary-light flex items-center gap-2">
-                  <Navigation className="w-4 h-4 shrink-0" /> In transit
+                  <Navigation className="w-4 h-4 shrink-0" />
+                  In transit — track the box until open permission is granted at delivery
                 </div>
               )}
             </div>

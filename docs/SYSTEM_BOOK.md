@@ -88,7 +88,7 @@ Implementation notes:
 - Manager
   - Approve accounts, verify payments, assign riders, manage devices and promo videos, run reports.
 - Motor Rider
-  - Receive assigned deliveries, view navigation, use unlock token to open box, mark delivery complete.
+  - Receive assigned deliveries, track the Smart Box on the map, wait for admin/manager open permission, then use the unlock code to open the box at delivery.
 - Operator / Viewer
   - View device telemetry and alerts (operators can control devices if granted permissions).
 
@@ -101,8 +101,9 @@ Implementation notes:
 
 9. Deployment & Environment Variables (summary from `DEPLOYMENT.md`)
 ------------------------------------------------------------------
-- Frontend: deploy `client/` to Vercel. Important env vars for Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL`, `VITE_SOCKET_URL`.
-- Backend: deploy `server/` to Render. Important Render env vars: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLIENT_URL`, `PUBLIC_BASE_URL`, `MQTT_BROKER_URL`.
+- Official production URL (website + API): `https://anti-tamper.onrender.com` (works on networks that block Vercel).
+- Optional frontend on Vercel: `https://anti-tamper.vercel.app` — env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL`, `VITE_SOCKET_URL`.
+- Backend on Render — env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `CLIENT_URL`, `PUBLIC_BASE_URL`, `MQTT_BROKER_URL`.
 - Supabase: run SQL scripts in order: `supabase/schema.sql` (or `full-setup.sql`), `supabase/delivery-system.sql`, `supabase/seed-admin.sql`.
 - Health check endpoint: `/health` should return JSON status.
 

@@ -129,7 +129,13 @@ export default function Operations() {
 
   const handleSendToken = (id) => runAction(async () => {
     const result = await api.sendDeliveryToken(token, id);
-    setSuccess(result?.message || 'Unlock code sent successfully — customer can see and use it on Dashboard / Deliveries.');
+    setSuccess(result?.message || 'Unlock code issued.');
+    return result;
+  }, id);
+
+  const handleGrantOpen = (id) => runAction(async () => {
+    const result = await api.grantDeliveryOpen(token, id);
+    setSuccess(result?.message || 'Open permission granted — rider can now open the box.');
     return result;
   }, id);
 
@@ -349,8 +355,8 @@ export default function Operations() {
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-500 flex items-start gap-1.5 pt-1 border-t border-border/60">
-                      <Key className="w-3.5 h-3.5 shrink-0 mt-0.5 text-warning" />
-                      Unlock token is generated automatically and sent to the customer only — they use it at delivery B to open the Smart Box.
+                      <Key className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-300" />
+                      After assign, the rider can track the box only. Use “Grant open permission” when they may open it — then they receive the unlock code.
                     </p>
                   </div>
                 )}
@@ -373,25 +379,49 @@ export default function Operations() {
                         Customer requested box opening — review in Opening requests
                       </Link>
                     )}
-                    {d.device_id && ['rider_assigned', 'in_transit', 'payment_verified'].includes(d.status) && !d.token_request_pending && (
-                      <div className="p-3 rounded-xl border bg-warning/5 border-warning/20 space-y-1.5">
-                        <p className="text-xs font-semibold text-warning flex items-center gap-1.5">
+                    {d.device_id && ['rider_assigned', 'in_transit'].includes(d.status) && (
+                      <div className={`p-3 rounded-xl border space-y-2 ${
+                        d.rider_open_granted || d.open_permission === 'granted'
+                          ? 'bg-success/5 border-success/25'
+                          : 'bg-amber-500/5 border-amber-500/25'
+                      }`}
+                      >
+                        <p className={`text-xs font-semibold flex items-center gap-1.5 ${
+                          d.rider_open_granted || d.open_permission === 'granted' ? 'text-success' : 'text-amber-300'
+                        }`}
+                        >
                           <Key className="w-3.5 h-3.5" />
-                          {(d.token_delivery || d.customer_token_sent)
-                            ? 'Unlock code sent to customer'
-                            : d.token_closed_at
-                              ? 'Previous code used — send a new one'
-                              : 'Send unlock code to customer'}
+                          {d.open_permission === 'used'
+                            ? 'Open code used — grant again if needed'
+                            : (d.rider_open_granted || d.open_permission === 'granted')
+                              ? 'Open permission granted — rider has unlock code'
+                              : 'Open permission pending — rider can track only'}
+                        </p>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          Rider tracks the box now. Grant permission so they get a code and can open at delivery.
                         </p>
                         <button
                           type="button"
-                          onClick={() => handleSendToken(d.id)}
-                          disabled={!!actionId || !d.device_id}
-                          className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/10 border border-warning/25 text-warning text-xs font-medium disabled:opacity-50"
+                          onClick={() => handleGrantOpen(d.id)}
+                          disabled={!!actionId || !d.device_id || !d.rider_id}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-success/15 border border-success/30 text-success text-xs font-semibold disabled:opacity-50"
                         >
-                          <Key className="w-3.5 h-3.5" />
-                          Send unlock code
+                          <Unlock className="w-3.5 h-3.5" />
+                          {(d.rider_open_granted || d.open_permission === 'granted')
+                            ? 'Re-issue open code to rider'
+                            : 'Grant open permission'}
                         </button>
+                        {!d.token_request_pending && (
+                          <button
+                            type="button"
+                            onClick={() => handleSendToken(d.id)}
+                            disabled={!!actionId || !d.device_id}
+                            className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border text-slate-300 text-xs font-medium disabled:opacity-50"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            Send / refresh code
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

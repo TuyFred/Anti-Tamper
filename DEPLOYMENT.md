@@ -4,13 +4,13 @@
 
 | Service | URL |
 |---------|-----|
-| **Website (use this if Vercel times out)** | https://anti-tamper.onrender.com |
-| **Client (Vercel)** | https://anti-tamper.vercel.app |
-
-On some Rwanda networks `anti-tamper.vercel.app` never connects (`ERR_CONNECTION_TIMED_OUT`). That is a path to Vercel, not a broken app. Open **https://anti-tamper.onrender.com** instead.
+| **Official app (works everywhere)** | https://anti-tamper.onrender.com |
 | **API health** | https://anti-tamper.onrender.com/health |
+| **Optional Vercel frontend** | https://anti-tamper.vercel.app |
 
-Use the **Render URL** if Vercel does not open on your network. After a deploy, the same Render service serves the homepage and `/api`.
+**Use https://anti-tamper.onrender.com as your main link.** It serves the website + API and opens on networks where Vercel times out.
+
+`anti-tamper.vercel.app` is optional. On some networks it shows `ERR_CONNECTION_TIMED_OUT` (ISP path to Vercel). The app itself is fine — share the Render link instead.
 
 If the first visit is slow (~30–50s), the free Render instance is waking up — wait and refresh.
 
@@ -68,7 +68,8 @@ In Render → your service → **Settings** → **Build & Deploy**:
 |----------|---------|
 | `SUPABASE_URL` | `https://bhyncpphxbpdqzluwoqa.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | *(service role key — never put in Vercel)* |
-| `CLIENT_URL` | `https://anti-tamper.vercel.app` |
+| `CLIENT_URL` | `https://anti-tamper.onrender.com` |
+| `CLIENT_URLS` | `https://anti-tamper.vercel.app,http://localhost:5173` |
 | `PUBLIC_BASE_URL` | `https://YOUR-SERVICE-NAME.onrender.com` |
 | `MQTT_BROKER_URL` | `mqtt://test.mosquitto.org:1883` |
 

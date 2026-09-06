@@ -59,13 +59,17 @@ export async function canAccessDevice(userId, deviceUuid, requireControl = false
   if (isRider(profile)) {
     const { data: assignment } = await supabase
       .from('delivery_requests')
-      .select('id')
+      .select('id, unlock_token, token_closed_at, token_sent_at')
       .eq('rider_id', userId)
       .eq('device_id', deviceUuid)
       .in('status', ['rider_assigned', 'in_transit'])
       .limit(1)
       .maybeSingle();
-    if (assignment) return !requireControl;
+    if (assignment) {
+      // View always; control only after open permission (active unlock code).
+      if (!requireControl) return true;
+      return Boolean(assignment.unlock_token) && !assignment.token_closed_at;
+    }
   }
 
   const { data } = await supabase
@@ -91,7 +95,7 @@ export async function getAccessibleDevices(userId) {
   if (isRider(profile)) {
     const { data: assignments } = await supabase
       .from('delivery_requests')
-      .select('device:devices (*)')
+      .select('unlock_token, token_closed_at, device:devices (*)')
       .eq('rider_id', userId)
       .in('status', ['rider_assigned', 'in_transit'])
       .not('device_id', 'is', null);
@@ -100,7 +104,11 @@ export async function getAccessibleDevices(userId) {
     return (assignments || [])
       .map((row) => row.device)
       .filter((d) => d?.id && !seen.has(d.id) && seen.add(d.id))
-      .map((d) => ({ ...d, can_view: true, can_control: false }));
+      .map((d) => {
+        const assignment = (assignments || []).find((row) => row.device?.id === d.id);
+        const granted = Boolean(assignment?.unlock_token) && !assignment?.token_closed_at;
+        return { ...d, can_view: true, can_control: granted };
+      });
   }
 
   const { data } = await supabase

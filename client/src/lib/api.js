@@ -142,6 +142,8 @@ export const api = {
     apiFetch(`/api/deliveries/${id}/assign-rider`, { method: 'POST', body: JSON.stringify(payload) }, token),
   sendDeliveryToken: (token, id) =>
     apiFetch(`/api/deliveries/${id}/send-token`, { method: 'POST' }, token),
+  grantDeliveryOpen: (token, id) =>
+    apiFetch(`/api/deliveries/${id}/grant-open`, { method: 'POST' }, token),
   requestDeliveryToken: (token, id) =>
     apiFetch(`/api/deliveries/${id}/request-token`, { method: 'POST' }, token),
   startTransit: (token, id) =>

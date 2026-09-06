@@ -1,4 +1,4 @@
-import{j as t}from"./react-vendor-B19sYB6i.js";import{s as a}from"./icons-Cs_dMtSI.js";const r="250791691817",o="+250 791 691 817",i=`Hello Smart Box Delivery Team,
+import{j as t}from"./react-vendor-B19sYB6i.js";import{s as a}from"./icons-BkmTlpx6.js";const r="250791691817",o="+250 791 691 817",i=`Hello Smart Box Delivery Team,
 
 I would like information about your secure delivery service. I am interested in sending official documents, legal papers, medical items, or other parcels through your anti-tamper Smart Box system in Rwanda.
 

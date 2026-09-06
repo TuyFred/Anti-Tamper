@@ -34,24 +34,55 @@ async function getDeliveryById(id) {
   return data;
 }
 
-/** Unlock token is visible only to the customer who owns the delivery. */
+function openPermissionState(delivery) {
+  if (!delivery?.rider_id || !['rider_assigned', 'in_transit'].includes(delivery.status)) {
+    return 'none';
+  }
+  if (delivery.token_closed_at || (delivery.token_used_at && !delivery.unlock_token)) {
+    return 'used';
+  }
+  if (delivery.rider_unlock_granted_at || (delivery.unlock_token && !delivery.token_closed_at)) {
+    return 'granted';
+  }
+  return 'waiting';
+}
+
+/** Unlock token: customer always (own delivery); assigned rider only after open permission is granted. */
 function sanitizeDelivery(delivery, profile, userId) {
   if (!delivery) return delivery;
-  if (isCustomer(profile) && delivery.customer_id === userId) return delivery;
+  if (isCustomer(profile) && delivery.customer_id === userId) {
+    return {
+      ...delivery,
+      open_permission: openPermissionState(delivery),
+    };
+  }
 
   const sanitized = { ...delivery };
-  delete sanitized.unlock_token;
-  delete sanitized.token_expires_at;
+  const isAssignedRider = isRider(profile) && delivery.rider_id === userId;
+  const permission = openPermissionState(delivery);
+  const riderMaySeeCode = isAssignedRider
+    && permission === 'granted'
+    && Boolean(delivery.unlock_token)
+    && !delivery.token_closed_at;
+
+  if (!riderMaySeeCode) {
+    delete sanitized.unlock_token;
+    delete sanitized.token_expires_at;
+  }
+
+  sanitized.open_permission = permission;
+  sanitized.rider_can_open = riderMaySeeCode && !delivery.token_used_at;
 
   if (isManager(profile)) {
     const hasActiveToken = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
     sanitized.customer_token_sent = hasActiveToken;
+    sanitized.rider_open_granted = permission === 'granted' || permission === 'used';
     sanitized.token_request_pending = Boolean(delivery.token_requested_at);
     sanitized.token_delivery = hasActiveToken ? {
-      channel: 'customer_inbox',
-      recipient_email: delivery.customer?.email || null,
-      recipient_name: delivery.customer?.full_name || null,
-      sent_at: delivery.token_sent_at || delivery.updated_at,
+      channel: permission === 'granted' ? 'rider_and_customer' : 'customer_inbox',
+      recipient_email: delivery.rider?.email || delivery.customer?.email || null,
+      recipient_name: delivery.rider?.full_name || delivery.customer?.full_name || null,
+      sent_at: delivery.rider_unlock_granted_at || delivery.token_sent_at || delivery.updated_at,
     } : null;
   }
 
@@ -117,39 +148,68 @@ async function unlockDevice(deviceRow, userId) {
   return { mqttSent, mqttError };
 }
 
-async function issueUnlockToken(delivery, actorId, summary) {
+async function issueUnlockToken(delivery, actorId, summary, options = {}) {
   const token = generateUnlockToken();
   const expires = new Date();
   expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
   const now = new Date().toISOString();
+  const grantToRider = Boolean(options.grantToRider);
 
-  const { data, error } = await supabase
+  const payload = {
+    unlock_token: token,
+    token_expires_at: expires.toISOString(),
+    token_sent_at: now,
+    token_used_at: null,
+    token_closed_at: null,
+    token_requested_at: null,
+    updated_at: now,
+  };
+
+  if (grantToRider) {
+    payload.rider_unlock_granted_at = now;
+    payload.rider_unlock_granted_by = actorId;
+  }
+
+  let { data, error } = await supabase
     .from('delivery_requests')
-    .update({
-      unlock_token: token,
-      token_expires_at: expires.toISOString(),
-      token_sent_at: now,
-      token_used_at: null,
-      token_closed_at: null,
-      token_requested_at: null,
-      updated_at: now,
-    })
+    .update(payload)
     .eq('id', delivery.id)
     .select(getDeliverySelect())
     .single();
+
+  // Older DBs may not have rider grant columns yet — retry without them.
+  if (error && /rider_unlock_granted/i.test(error.message || '')) {
+    delete payload.rider_unlock_granted_at;
+    delete payload.rider_unlock_granted_by;
+    ({ data, error } = await supabase
+      .from('delivery_requests')
+      .update(payload)
+      .eq('id', delivery.id)
+      .select(getDeliverySelect())
+      .single());
+  }
 
   if (error) throw new Error(error.message);
 
   await logActivity({
     entityType: 'delivery',
     entityId: data.id,
-    action: 'token_sent',
+    action: grantToRider ? 'rider_open_granted' : 'token_sent',
     actorId,
     summary,
   });
 
   notifyDeliveryUpdate(data);
   return data;
+}
+
+function canActorUnlockDelivery(delivery, profile, userId) {
+  if (isManager(profile)) return true;
+  if (delivery.customer_id === userId) return true;
+  if (isRider(profile) && delivery.rider_id === userId) {
+    return openPermissionState(delivery) === 'granted';
+  }
+  return false;
 }
 
 /** Customer can track assigned box on the map (view only — open uses delivery token). */
@@ -456,10 +516,6 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     return res.status(400).json({ error: 'Payment must be verified before assigning a rider' });
   }
 
-  const token = generateUnlockToken();
-  const expires = new Date();
-  expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
-
   const { data: device } = await supabase.from('devices').select('*').eq('id', device_id).single();
   if (!device) return res.status(404).json({ error: 'Device not found' });
 
@@ -467,23 +523,40 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
 
   await grantCustomerDeviceView(delivery.customer_id, device_id, req.user.id);
 
-  const { data, error } = await supabase
+  const now = new Date().toISOString();
+  const assignPayload = {
+    rider_id,
+    device_id,
+    status: 'rider_assigned',
+    // Track only until admin/manager grants open permission.
+    unlock_token: null,
+    token_expires_at: null,
+    token_sent_at: null,
+    token_used_at: null,
+    token_closed_at: null,
+    token_requested_at: null,
+    rider_unlock_granted_at: null,
+    rider_unlock_granted_by: null,
+    updated_at: now,
+  };
+
+  let { data, error } = await supabase
     .from('delivery_requests')
-    .update({
-      rider_id,
-      device_id,
-      status: 'rider_assigned',
-      unlock_token: token,
-      token_expires_at: expires.toISOString(),
-      token_sent_at: new Date().toISOString(),
-      token_used_at: null,
-      token_closed_at: null,
-      token_requested_at: null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(assignPayload)
     .eq('id', delivery.id)
     .select(getDeliverySelect())
     .single();
+
+  if (error && /rider_unlock_granted/i.test(error.message || '')) {
+    delete assignPayload.rider_unlock_granted_at;
+    delete assignPayload.rider_unlock_granted_by;
+    ({ data, error } = await supabase
+      .from('delivery_requests')
+      .update(assignPayload)
+      .eq('id', delivery.id)
+      .select(getDeliverySelect())
+      .single());
+  }
 
   if (error) return res.status(500).json({ error: error.message });
   await logDeliveryStatus(data.id, delivery.status, 'rider_assigned', req.user.id, 'Rider and Smart Box assigned');
@@ -492,17 +565,48 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     entityId: data.id,
     action: 'rider_assigned',
     actorId: req.user.id,
-    summary: 'Rider and Smart Box assigned',
-    newValue: { rider_id, device_id, token_sent_at: data.token_sent_at },
+    summary: 'Rider and Smart Box assigned — open permission pending',
+    newValue: { rider_id, device_id },
   });
   notifyDeliveryUpdate(data);
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Rider assigned. Unlock code sent to customer inbox (one-time use at delivery B).',
+    message: 'Rider assigned. Rider can track the box. Grant open permission when ready so the rider receives the unlock code.',
   });
 });
 
-/** Manager/Admin: send or resend unlock token (even after used/expired). */
+/** Manager/Admin: grant assigned rider permission to open — issues unlock code. */
+router.post('/:id/grant-open', authenticate, requireApproved, requireManager, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+  if (!['rider_assigned', 'in_transit'].includes(delivery.status)) {
+    return res.status(400).json({ error: 'Assign a rider before granting open permission' });
+  }
+  if (!delivery.rider_id) {
+    return res.status(400).json({ error: 'No rider assigned to this delivery' });
+  }
+  if (!delivery.device_id) {
+    return res.status(400).json({ error: 'Assign a Smart Box before granting open permission' });
+  }
+
+  try {
+    const data = await issueUnlockToken(
+      delivery,
+      req.user.id,
+      'Open permission granted — unlock code issued to assigned rider',
+      { grantToRider: true },
+    );
+
+    res.json({
+      ...sanitizeDelivery(data, req.profile, req.user.id),
+      message: 'Open permission granted. The assigned rider can now see the unlock code and open the Smart Box.',
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/** Manager/Admin: send or resend unlock token (customer re-open / also grants rider). */
 router.post('/:id/send-token', authenticate, requireApproved, requireManager, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
@@ -514,17 +618,21 @@ router.post('/:id/send-token', authenticate, requireApproved, requireManager, as
   }
 
   try {
+    const grantToRider = Boolean(delivery.rider_id);
     const data = await issueUnlockToken(
       delivery,
       req.user.id,
       delivery.token_closed_at || delivery.token_requested_at
-        ? 'New unlock token resent to customer'
-        : 'Unlock token sent to customer',
+        ? 'New unlock token resent after opening request'
+        : 'Unlock token sent — open permission granted',
+      { grantToRider },
     );
 
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: 'Unlock code sent successfully — customer can see and use it on Dashboard / Deliveries.',
+      message: grantToRider
+        ? 'Unlock code issued — assigned rider can open the Smart Box.'
+        : 'Unlock code sent successfully — customer can see and use it on Dashboard / Deliveries.',
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -611,11 +719,16 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
 
-  if (delivery.customer_id !== req.user.id && !isManager(req.profile)) {
-    return res.status(403).json({ error: 'Only the customer can unlock with token' });
+  if (!canActorUnlockDelivery(delivery, req.profile, req.user.id)) {
+    if (isRider(req.profile) && delivery.rider_id === req.user.id) {
+      return res.status(403).json({
+        error: 'Open permission not granted yet — wait for admin/manager to grant open permission and issue your code',
+      });
+    }
+    return res.status(403).json({ error: 'You are not allowed to unlock this Smart Box' });
   }
   if (!['rider_assigned', 'in_transit'].includes(delivery.status)) {
-    return res.status(400).json({ error: 'Box is not ready for customer pickup' });
+    return res.status(400).json({ error: 'Box is not ready to open for this delivery' });
   }
   if (isTokenConsumed(delivery)) {
     return res.status(400).json({ error: 'Unlock code already used — contact manager for help' });
@@ -649,15 +762,20 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
+    const openedByRider = isRider(req.profile) && delivery.rider_id === req.user.id;
     await logActivity({
       entityType: 'delivery',
       entityId: data.id,
       action: 'box_unlocked',
       actorId: req.user.id,
-      summary: 'Customer unlocked Smart Box with token',
+      summary: openedByRider
+        ? 'Rider unlocked Smart Box with granted open code'
+        : 'Customer unlocked Smart Box with token',
     });
 
-    const baseMessage = 'Smart Box opened — retrieve your items, then tap Close Smart Box when done.';
+    const baseMessage = openedByRider
+      ? 'Smart Box opened — hand over items, then tap Close Smart Box when done.'
+      : 'Smart Box opened — retrieve your items, then tap Close Smart Box when done.';
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
       message: unlockResult.mqttSent
@@ -674,8 +792,10 @@ router.post('/:id/customer-lock', authenticate, requireApproved, async (req, res
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
 
-  if (delivery.customer_id !== req.user.id && !isManager(req.profile)) {
-    return res.status(403).json({ error: 'Only the customer can close this delivery box' });
+  const isOwnerCustomer = delivery.customer_id === req.user.id;
+  const isAssignedRider = isRider(req.profile) && delivery.rider_id === req.user.id;
+  if (!isOwnerCustomer && !isAssignedRider && !isManager(req.profile)) {
+    return res.status(403).json({ error: 'Only the customer or assigned rider can close this delivery box' });
   }
   if (!delivery.token_used_at) {
     return res.status(400).json({ error: 'Open the Smart Box with your code first' });
