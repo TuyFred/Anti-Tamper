@@ -394,6 +394,26 @@ export function getLiveMapPosition(device, gpsUpdates = {}, { maxAgeMs = 120000 
   return null;
 }
 
+/** Last known box position for manager fleet maps — includes stale GPS so the map is not empty. */
+export function getLastKnownMapPosition(device, gpsUpdates = {}) {
+  const live = getLiveMapPosition(device, gpsUpdates, { maxAgeMs: 30 * 60 * 1000 });
+  if (live) return live;
+  if (
+    device?.latitude != null
+    && device?.longitude != null
+    && isValidBoxGps(device.latitude, device.longitude)
+  ) {
+    return {
+      lat: device.latitude,
+      lng: device.longitude,
+      last_seen: device.last_seen,
+      source: 'stored',
+      fresh: false,
+    };
+  }
+  return null;
+}
+
 export function mergeDevicesWithGps(devices, gpsUpdates = {}) {
   return (devices || []).map((device) => mergeDeviceWithGps(device, gpsUpdates));
 }

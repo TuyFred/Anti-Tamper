@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { MapContainer, useMap, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { Minimize2, Users, Truck, Package } from 'lucide-react';
-import { mergeDeviceWithGps, getLiveMapPosition, KIGALI_CENTER, isInRwanda } from '../lib/geocode';
+import { mergeDeviceWithGps, getLastKnownMapPosition, KIGALI_CENTER, isInRwanda } from '../lib/geocode';
 import { MAP_LABELS } from '../lib/mapConfig';
 import { formatDeliveryRef } from '../lib/deliveryUtils';
 import AppMapTileLayer from './AppMapTileLayer';
@@ -58,13 +58,13 @@ export default function FleetMap({
     (devices || [])
       .map((device) => {
         const merged = mergeDeviceWithGps(device, gpsUpdates);
-        const live = getLiveMapPosition(merged, gpsUpdates);
-        if (!live?.fresh) return null;
+        const live = getLastKnownMapPosition(merged, gpsUpdates);
+        if (!live) return null;
         return {
           device,
           merged,
           pos: { lat: live.lat, lng: live.lng },
-          fresh: true,
+          fresh: Boolean(live.fresh),
           lastUpdated: live.last_seen,
         };
       })

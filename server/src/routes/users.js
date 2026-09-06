@@ -179,7 +179,8 @@ router.post('/', authenticate, requireApproved, requireAdmin, async (req, res) =
     can_control = false,
   } = req.body;
 
-  if (!email || !password) {
+  const normalizedEmail = email?.trim()?.toLowerCase();
+  if (!normalizedEmail || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
@@ -188,10 +189,10 @@ router.post('/', authenticate, requireApproved, requireAdmin, async (req, res) =
   }
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email,
+    email: normalizedEmail,
     password,
     email_confirm: true,
-    user_metadata: { full_name: full_name || email },
+    user_metadata: { full_name: full_name || normalizedEmail },
   });
 
   if (authError) {
@@ -211,7 +212,7 @@ router.post('/', authenticate, requireApproved, requireAdmin, async (req, res) =
   }
 
   const profileUpdates = {
-    full_name: full_name || email,
+    full_name: full_name || normalizedEmail,
     role_id: resolvedRoleId,
     is_approved,
     updated_at: new Date().toISOString(),
@@ -234,7 +235,7 @@ router.post('/', authenticate, requireApproved, requireAdmin, async (req, res) =
       .from('profiles')
       .upsert({
         id: userId,
-        email,
+        email: normalizedEmail,
         ...profileUpdates,
       })
       .select('*, role:roles(id, name)')

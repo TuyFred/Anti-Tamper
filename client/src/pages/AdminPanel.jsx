@@ -12,13 +12,24 @@ import DevicePermissions from '../components/DevicePermissions';
 import DeviceRegistry from '../components/DeviceRegistry';
 
 const ROLE_LABELS = {
-  admin: 'Manager',
+  admin: 'Admin',
   manager: 'Manager',
   customer: 'Customer',
   motor_rider: 'Motor Rider',
   operator: 'Operator',
   viewer: 'Viewer',
 };
+
+const ROLE_HINTS = {
+  admin: 'Full access — users, boxes, orders, tracking',
+  manager: 'Orders, operations, fleet map, and users',
+  customer: 'Request deliveries and unlock the box',
+  motor_rider: 'See assigned routes and live tracking',
+  operator: 'Limited operations access',
+  viewer: 'Read-only access',
+};
+
+const ROLE_ORDER = ['admin', 'manager', 'customer', 'motor_rider', 'operator', 'viewer'];
 
 const ROLE_VARIANTS = {
   admin: 'primary',
@@ -91,17 +102,29 @@ export default function AdminPanel() {
   const filteredUsers = useMemo(() => {
     let list = allUsers;
     if (filter === 'pending') list = pendingUsers;
-    if (filter === 'approved') list = approvedUsers;
+    else if (filter === 'approved') list = approvedUsers;
+    else if (ROLE_ORDER.includes(filter)) list = allUsers.filter((u) => u.role?.name === filter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
         (u) =>
           u.email?.toLowerCase().includes(q) ||
           u.full_name?.toLowerCase().includes(q)
+          || (u.role?.name || '').toLowerCase().includes(q)
       );
     }
     return list;
   }, [allUsers, filter, search, pendingUsers, approvedUsers]);
+
+  const sortedRoles = useMemo(() => (
+    [...roles].sort((a, b) => {
+      const ia = ROLE_ORDER.indexOf(a.name);
+      const ib = ROLE_ORDER.indexOf(b.name);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    })
+  ), [roles]);
+
+  const selectedAddRole = roles.find((r) => r.id === addForm.role_id);
 
   const openAddUser = () => {
     const customer = roles.find((r) => r.name === 'customer');
@@ -130,7 +153,11 @@ export default function AdminPanel() {
     setActionLoading('create');
 
     try {
-      await api.createUser(token, addForm);
+      await api.createUser(token, {
+        ...addForm,
+        email: addForm.email.trim().toLowerCase(),
+        full_name: addForm.full_name.trim(),
+      });
       await loadData();
       setShowAddUser(false);
       setAddForm(EMPTY_ADD_FORM);
@@ -339,7 +366,11 @@ export default function AdminPanel() {
               onChange={(e) => setFilter(e.target.value)}
               className="px-3 py-2 bg-surface rounded-lg border border-border text-sm text-white focus:border-primary focus:outline-none"
             >
-              <option value="all">All</option>
+              <option value="all">All roles</option>
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
+              <option value="customer">Customer</option>
+              <option value="motor_rider">Motor rider</option>
               <option value="approved">Approved</option>
               <option value="pending">Pending</option>
             </select>
@@ -495,14 +526,25 @@ export default function AdminPanel() {
               <label className="block text-xs font-medium text-slate-400 mb-1">Role</label>
               <select
                 value={addForm.role_id}
-                onChange={(e) => setAddForm({ ...addForm, role_id: e.target.value })}
+                onChange={(e) => {
+                  const roleId = e.target.value;
+                  const roleName = roles.find((r) => r.id === roleId)?.name;
+                  setAddForm({
+                    ...addForm,
+                    role_id: roleId,
+                    grant_device_access: roleName === 'motor_rider' || addForm.grant_device_access,
+                  });
+                }}
                 className="w-full px-4 py-2.5 bg-surface rounded-xl border border-border text-white focus:border-primary focus:outline-none"
                 required
               >
-                {roles.map((r) => (
+                {sortedRoles.map((r) => (
                   <option key={r.id} value={r.id}>{ROLE_LABELS[r.name] || r.name}</option>
                 ))}
               </select>
+              {selectedAddRole && (
+                <p className="text-[11px] text-slate-500 mt-1.5">{ROLE_HINTS[selectedAddRole.name] || ''}</p>
+              )}
             </div>
           </div>
 
@@ -617,7 +659,7 @@ export default function AdminPanel() {
                 onChange={(e) => setEditForm({ ...editForm, role_id: e.target.value })}
                 className="w-full px-4 py-2.5 bg-surface rounded-xl border border-border text-white focus:border-primary focus:outline-none"
               >
-                {roles.map((r) => (
+                {sortedRoles.map((r) => (
                   <option key={r.id} value={r.id}>{ROLE_LABELS[r.name] || r.name}</option>
                 ))}
               </select>
