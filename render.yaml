@@ -28,7 +28,7 @@ services:
       - key: PUBLIC_BASE_URL
         value: https://anti-tamper.onrender.com
       - key: MQTT_BROKER_URL
-        sync: false
+        value: mqtt://broker.emqx.io:1883
       - key: MQTT_USERNAME
         sync: false
       - key: MQTT_PASSWORD

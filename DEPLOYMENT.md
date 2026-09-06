@@ -71,7 +71,7 @@ In Render → your service → **Settings** → **Build & Deploy**:
 | `CLIENT_URL` | `https://anti-tamper.onrender.com` |
 | `CLIENT_URLS` | `https://anti-tamper.vercel.app,http://localhost:5173` |
 | `PUBLIC_BASE_URL` | `https://YOUR-SERVICE-NAME.onrender.com` |
-| `MQTT_BROKER_URL` | `mqtt://test.mosquitto.org:1883` |
+| `MQTT_BROKER_URL` | `mqtt://broker.emqx.io:1883` (must match ESP32 `MQTT_SERVER`) |
 
 After Render deploys, test: `https://YOUR-SERVICE-NAME.onrender.com/health`
 
@@ -130,7 +130,7 @@ In **Authentication → URL configuration**, add:
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key |
 | `CLIENT_URL` | `https://your-app.vercel.app` |
 | `PUBLIC_BASE_URL` | `https://smart-box-api.onrender.com` |
-| `MQTT_BROKER_URL` | `mqtt://test.mosquitto.org:1883` |
+| `MQTT_BROKER_URL` | `mqtt://broker.emqx.io:1883` (must match ESP32 `MQTT_SERVER`) |
 
 After deploy, open `https://YOUR-API.onrender.com/health` — should return `{ "status": "ok" }`.
 
@@ -189,7 +189,8 @@ Use `client/.env` and `server/.env` with localhost URLs.
 ## 6. ESP32 / MQTT
 
 Point firmware to the same MQTT broker as `MQTT_BROKER_URL` on Render.  
-Public brokers (e.g. test.mosquitto.org) work for demos; use a private broker for production.
+Use `mqtt://broker.emqx.io:1883` — same as `firmware/esp32-box-001.ino`.  
+Do **not** use `test.mosquitto.org` if the ESP32 is on EMQX (open/close commands will never arrive).
 
 ---
 
