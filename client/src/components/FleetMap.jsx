@@ -5,11 +5,14 @@ import L from 'leaflet';
 import { Minimize2, Users, Truck, Package } from 'lucide-react';
 import { mergeDeviceWithGps, getLastKnownMapPosition, KIGALI_CENTER, isInRwanda } from '../lib/geocode';
 import { MAP_LABELS } from '../lib/mapConfig';
-import { formatDeliveryRef } from '../lib/deliveryUtils';
+import { formatDeliveryRef, isActiveDelivery } from '../lib/deliveryUtils';
+import { resolveBoxDisplayPosition } from '../lib/boxTracking';
 import AppMapTileLayer from './AppMapTileLayer';
 import MapFloatControls from './map/MapFloatControls';
 import { MapPeerLocationLayer, MapLegendStrip } from './map/MapLiveLayers';
-import { createSmartBoxIcon } from '../lib/mapMarkers';
+import {
+  createSmartBoxIcon, createPickupIcon, createDeliveryIcon,
+} from '../lib/mapMarkers';
 import MapLocationCard from './MapLocationCard';
 
 function MapResize({ trigger }) {
@@ -54,38 +57,83 @@ export default function FleetMap({
     return map;
   }, [deliveries]);
 
-  const boxMarkers = useMemo(() => (
-    (devices || [])
-      .map((device) => {
-        const merged = mergeDeviceWithGps(device, gpsUpdates);
-        const live = getLastKnownMapPosition(merged, gpsUpdates);
-        if (!live) return null;
-        return {
-          device,
-          merged,
-          pos: { lat: live.lat, lng: live.lng },
-          fresh: Boolean(live.fresh),
-          lastUpdated: live.last_seen,
-        };
-      })
-      .filter(Boolean)
-  ), [devices, gpsUpdates]);
-
   const peerList = useMemo(() => (
     Object.values(fleetLocations || {}).filter(
       (loc) => loc?.latitude != null && loc?.longitude != null && isInRwanda(loc.latitude, loc.longitude)
     )
   ), [fleetLocations]);
 
+  const boxMarkers = useMemo(() => (
+    (devices || [])
+      .map((device) => {
+        const merged = mergeDeviceWithGps(device, gpsUpdates);
+        const live = getLastKnownMapPosition(merged, gpsUpdates);
+        const assigned = (deliveries || []).find(
+          (d) => isActiveDelivery(d.status) && (d.device_id === device.id || d.device?.id === device.id),
+        );
+        const riderPeer = peerList.find(
+          (p) => p.role === 'motor_rider' && assigned && p.deliveryId === assigned.id,
+        );
+        const resolved = resolveBoxDisplayPosition({
+          boxPos: live ? { lat: live.lat, lng: live.lng } : null,
+          boxFresh: Boolean(live?.fresh),
+          boxDeviceId: device.device_id,
+          riderPeer,
+          lastSeen: live?.last_seen,
+        });
+        if (!resolved?.pos && !live) return null;
+        const pos = resolved?.pos || { lat: live.lat, lng: live.lng };
+        return {
+          device,
+          merged,
+          pos,
+          fresh: Boolean(resolved?.fresh ?? live?.fresh),
+          lastUpdated: resolved?.lastUpdated || live?.last_seen,
+          source: resolved?.source || 'hardware',
+        };
+      })
+      .filter(Boolean)
+  ), [devices, gpsUpdates, deliveries, peerList]);
+
+  const routePins = useMemo(() => {
+    const pins = [];
+    for (const d of deliveries || []) {
+      if (!isActiveDelivery(d.status)) continue;
+      const ref = formatDeliveryRef(d.id);
+      if (d.pickup_latitude != null && d.pickup_longitude != null && isInRwanda(d.pickup_latitude, d.pickup_longitude)) {
+        pins.push({
+          key: `${d.id}-a`,
+          kind: 'pickup',
+          lat: Number(d.pickup_latitude),
+          lng: Number(d.pickup_longitude),
+          title: `Pickup A · ${ref}`,
+          subtitle: d.pickup_address,
+        });
+      }
+      if (d.delivery_latitude != null && d.delivery_longitude != null && isInRwanda(d.delivery_latitude, d.delivery_longitude)) {
+        pins.push({
+          key: `${d.id}-b`,
+          kind: 'delivery',
+          lat: Number(d.delivery_latitude),
+          lng: Number(d.delivery_longitude),
+          title: `Delivery B · ${ref}`,
+          subtitle: d.delivery_address,
+        });
+      }
+    }
+    return pins;
+  }, [deliveries]);
+
   const mapPoints = useMemo(() => {
     const pts = [];
     for (const b of boxMarkers) pts.push([b.pos.lat, b.pos.lng]);
     for (const p of peerList) pts.push([p.latitude, p.longitude]);
+    for (const pin of routePins) pts.push([pin.lat, pin.lng]);
     if (!pts.length) pts.push(KIGALI_CENTER);
     return pts;
-  }, [boxMarkers, peerList]);
+  }, [boxMarkers, peerList, routePins]);
 
-  const resizeKey = `${fullscreen}-${boxMarkers.length}-${peerList.length}-${fitTick}`;
+  const resizeKey = `${fullscreen}-${boxMarkers.length}-${peerList.length}-${routePins.length}-${fitTick}`;
 
   useEffect(() => {
     if (!fullscreen) return undefined;
@@ -168,6 +216,28 @@ export default function FleetMap({
             })}
 
             <MapPeerLocationLayer peers={peersWithLabels} />
+
+            {routePins.map((pin) => (
+              <Marker
+                key={pin.key}
+                position={[pin.lat, pin.lng]}
+                icon={pin.kind === 'pickup' ? createPickupIcon() : createDeliveryIcon()}
+                zIndexOffset={400}
+              >
+                <Popup>
+                  <MapLocationCard
+                    lat={pin.lat}
+                    lng={pin.lng}
+                    title={pin.title}
+                    subtitle={pin.subtitle}
+                    theme="light"
+                    compact
+                    live={false}
+                    online={false}
+                  />
+                </Popup>
+              </Marker>
+            ))}
           </MapContainer>
 
           <MapFloatControls
@@ -184,6 +254,8 @@ export default function FleetMap({
               { key: 'box', label: MAP_LABELS.smartBox, tone: 'sky', dot: true, dotColor: '#0ea5e9' },
               { key: 'rider', label: 'Rider GPS', tone: 'amber', dot: true, dotColor: '#f59e0b' },
               { key: 'customer', label: 'Customer GPS', tone: 'pink', dot: true, dotColor: '#ec4899' },
+              { key: 'a', label: 'Pickup A', tone: 'green', dot: true, dotColor: '#10b981' },
+              { key: 'b', label: 'Delivery B', tone: 'blue', dot: true, dotColor: '#3b82f6' },
             ]}
           />
 

@@ -6,6 +6,8 @@ import { useAuth } from './context/AuthContext';
 
 import Layout from './components/Layout';
 
+import ActiveLocationShare from './components/ActiveLocationShare';
+
 import { prefetchAppRoutes } from './lib/routePrefetch';
 
 
@@ -134,6 +136,7 @@ function AppLayout({ children }) {
   return (
 
     <Layout>
+      <ActiveLocationShare />
 
       <Suspense fallback={<InlinePageLoader />}>
 

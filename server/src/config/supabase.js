@@ -27,13 +27,26 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   realtime: { transport: ws },
 });
 
+function resolveMqttBrokerUrl() {
+  const raw = (process.env.MQTT_BROKER_URL || 'mqtt://broker.emqx.io:1883').trim();
+  // ESP32 firmware uses broker.emqx.io — Mosquitto causes silent open/close failures.
+  if (/test\.mosquitto\.org/i.test(raw)) {
+    console.warn(
+      '⚠️  MQTT_BROKER_URL points at test.mosquitto.org but BOX-001 firmware uses broker.emqx.io. '
+      + 'Forcing mqtt://broker.emqx.io:1883 so unlock/lock commands reach the Smart Box.',
+    );
+    return 'mqtt://broker.emqx.io:1883';
+  }
+  return raw;
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   clientUrl: getClientOrigins()[0],
   clientOrigins: getClientOrigins(),
   mqtt: {
-    brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://broker.emqx.io:1883',
+    brokerUrl: resolveMqttBrokerUrl(),
     username: process.env.MQTT_USERNAME || undefined,
     password: process.env.MQTT_PASSWORD || undefined,
   },

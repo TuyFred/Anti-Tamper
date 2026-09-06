@@ -41,6 +41,7 @@ const int MPU_ADDR = 0x68;
 const bool RELAY_MODULE_ACTIVE_LOW = true;
 // true  = relay ON opens the box (electric strike / mag lock) — most common
 // false = relay ON locks the box (solenoid bolt) — set false if Unlock/Lock are backwards
+// If dashboard Unlock leaves the box locked (or Lock opens it), flip this flag and reflash.
 const bool RELAY_ENERGIZE_TO_UNLOCK = false;
 
 // ================= TIMING =================
