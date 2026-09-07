@@ -132,9 +132,9 @@ export default function RiderRoute() {
                         : 'text-amber-300'
                   }`}
                   >
-                    {openState === 'granted' ? 'Open permission: granted'
-                      : openState === 'used' ? 'Open code used'
-                        : 'Open permission: waiting'}
+                    {openState === 'granted' ? 'Customer can open'
+                      : openState === 'used' ? 'Customer opened / code used'
+                        : 'Waiting: admin grant to customer'}
                   </p>
                   <p className="text-[10px] text-slate-500 mt-1">{formatDeliveryDate(d.created_at)}</p>
                 </button>
@@ -205,7 +205,7 @@ export default function RiderRoute() {
               {selected.status === 'in_transit' && (
                 <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/25 text-xs text-primary-light flex items-center gap-2">
                   <Navigation className="w-4 h-4 shrink-0" />
-                  In transit — track the box until open permission is granted at delivery
+                  In transit — deliver the box; customer opens with their unlock code
                 </div>
               )}
             </div>

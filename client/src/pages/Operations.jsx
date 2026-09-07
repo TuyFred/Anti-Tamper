@@ -138,7 +138,7 @@ export default function Operations() {
     const code = result?.unlock_token || result?.token_delivery?.unlock_token;
     setSuccess(
       code
-        ? `${result?.message || 'Open permission granted.'} Code for customer: ${code}`
+        ? `${result?.message || 'Open permission granted.'} Customer code: ${code}`
         : (result?.message || 'Open permission granted — customer can now open the box.'),
     );
     return result;
@@ -361,7 +361,7 @@ export default function Operations() {
                     </div>
                     <p className="text-[11px] text-slate-500 flex items-start gap-1.5 pt-1 border-t border-border/60">
                       <Key className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-300" />
-                      After assign, the rider can track the box only. Use “Grant open permission” when they may open it — then they receive the unlock code.
+                      After assign, the rider tracks the box only. Use “Grant open permission” to send the unlock code to the <span className="text-white font-medium">customer</span> so they can open.
                     </p>
                   </div>
                 )}
@@ -399,16 +399,16 @@ export default function Operations() {
                           {d.open_permission === 'used'
                             ? 'Open code used — grant again if needed'
                             : (d.rider_open_granted || d.open_permission === 'granted')
-                              ? 'Open permission granted — customer & rider have the code'
+                              ? 'Open permission granted — customer has the unlock code'
                               : 'Open permission pending — customer waiting for code'}
                         </p>
                         {(d.token_delivery?.unlock_token || d.unlock_token) && (d.rider_open_granted || d.open_permission === 'granted') && (
                           <p className="text-sm font-mono tracking-widest text-white bg-surface/80 border border-success/30 rounded-lg px-3 py-2">
-                            Code: {d.token_delivery?.unlock_token || d.unlock_token}
+                            Customer code: {d.token_delivery?.unlock_token || d.unlock_token}
                           </p>
                         )}
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          After grant, the customer sees the unlock code on Dashboard / Deliveries and can Open then Close the box.
+                          After grant, only the customer sees the unlock code on Dashboard / Deliveries and can Open then Close the box. Rider tracks only.
                         </p>
                         <button
                           type="button"
@@ -418,7 +418,7 @@ export default function Operations() {
                         >
                           <Unlock className="w-3.5 h-3.5" />
                           {(d.rider_open_granted || d.open_permission === 'granted')
-                            ? 'Re-issue open code to rider'
+                            ? 'Re-issue open code to customer'
                             : 'Grant open permission'}
                         </button>
                         {!d.token_request_pending && (

@@ -19,11 +19,10 @@ export function notifyDeliveryUpdate(delivery) {
     open_granted: Boolean(delivery.unlock_token) && !delivery.token_closed_at,
   };
 
-  // Managers only — customers must not receive token-less bumps on the shared room
-  // (they also join "approved", which used to wipe / race the unlock code UI).
+  // Managers only — customers must not receive token-less bumps on the shared room.
   ioInstance.to('managers').emit('delivery:update', base);
 
-  // Customer receives the unlock code immediately after admin grant.
+  // Customer receives the unlock code after admin grant (customer opens the box).
   if (delivery.customer_id) {
     const customerPayload = {
       ...base,
@@ -36,19 +35,13 @@ export function notifyDeliveryUpdate(delivery) {
     ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:update', customerPayload);
   }
 
-  // Assigned rider gets the code live once admin grants open permission.
+  // Rider: status only — never the unlock code (customer opens).
   if (delivery.rider_id) {
-    const riderPayload = {
+    ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:update', {
       ...base,
-      unlock_token: (delivery.unlock_token && !delivery.token_closed_at)
-        ? delivery.unlock_token
-        : null,
       open_permission: base.open_granted ? 'granted' : (delivery.token_closed_at ? 'used' : 'waiting'),
-      rider_can_open: Boolean(delivery.unlock_token) && !delivery.token_closed_at,
-    };
-    ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:update', riderPayload);
-    if (riderPayload.unlock_token) {
-      ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:token-sent', riderPayload);
-    }
+      customer_open_granted: base.open_granted,
+      rider_can_open: false,
+    });
   }
 }

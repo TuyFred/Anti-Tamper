@@ -106,7 +106,7 @@ export default function OpeningRequests() {
                       Approve opening — send new unlock code
                     </p>
                     <p className="text-slate-400">
-                      Sends a new unlock code and grants open permission to the assigned rider (and customer inbox).
+                      Sends a new unlock code to the <span className="text-white font-medium">customer</span> so they can open the Smart Box.
                       {d.customer?.email && <> Notify: {d.customer.email}</>}
                       {d.device_id && <> · Box assigned</>}
                     </p>
@@ -121,7 +121,7 @@ export default function OpeningRequests() {
                       ) : (
                         <Unlock className="w-4 h-4" />
                       )}
-                      Approve & grant open code
+                      Approve & send code to customer
                     </button>
                     {!d.device_id && (
                       <p className="text-[11px] text-danger">Assign a Smart Box in Operations first.</p>
