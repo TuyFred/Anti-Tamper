@@ -7,6 +7,7 @@ import { countDeliverySegments } from '../lib/deliveryUtils';
 import { useCustomerDeliveries } from '../hooks/useCustomerDeliveries';
 import DeliveryBookingModal from '../components/DeliveryRequestFormSection';
 import CustomerDeliveryCards from '../components/CustomerDeliveryCards';
+import CustomerUnlockCodePopup from '../components/CustomerUnlockCodePopup';
 import ContentSkeleton from '../components/ui/ContentSkeleton';
 
 export default function Deliveries() {
@@ -55,6 +56,8 @@ export default function Deliveries() {
 
   return (
     <div className="space-y-5">
+      <CustomerUnlockCodePopup deliveries={deliveries} />
+
       {error && (
         <div className="p-3 bg-danger/10 border border-danger/25 rounded-xl text-sm text-danger">{error}</div>
       )}

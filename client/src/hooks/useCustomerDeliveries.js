@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { mergeDeliveriesWithLivePatches, mergeDeliveriesWithUnlockCodes } from '../lib/deliveryLivePatch';
@@ -17,9 +17,10 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
   const [reviews, setReviews] = useState({});
   const [submittedReviews, setSubmittedReviews] = useState({});
   const [reviewSubmittingId, setReviewSubmittingId] = useState(null);
+  const authDeadRef = useRef(false);
 
   const load = useCallback(async () => {
-    if (!token) {
+    if (!token || authDeadRef.current) {
       setLoading(false);
       return;
     }
@@ -40,6 +41,7 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
       setError('');
     } catch (err) {
       if (err?.status === 401) {
+        authDeadRef.current = true;
         setDeliveries([]);
         setError('Session expired — please sign in again');
         return;
@@ -51,12 +53,36 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
   }, [token]);
 
   useEffect(() => {
+    authDeadRef.current = false;
     if (token) load();
   }, [token, load]);
 
   useEffect(() => {
     if (token && deliveryUpdateTick > 0) load();
   }, [deliveryUpdateTick, token, load]);
+
+  // Auto-refresh while waiting for admin grant so the code appears without manual refresh.
+  useEffect(() => {
+    if (!token || authDeadRef.current) return undefined;
+    const waiting = (deliveries || []).some((d) =>
+      ['rider_assigned', 'in_transit'].includes(d.status)
+      && !d.token_closed_at
+      && !(d.unlock_token || d.unlock_code),
+    );
+    // Keep a light poll even after code arrives so multi-delivery stays fresh.
+    const ms = waiting ? 2500 : 8000;
+    const id = setInterval(() => {
+      if (!authDeadRef.current) load();
+    }, ms);
+    const onFocus = () => { if (!authDeadRef.current) load(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [token, load, deliveries]);
 
   // Apply live unlock codes into list state immediately (do not wait for refetch).
   useEffect(() => {

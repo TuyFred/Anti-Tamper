@@ -12,6 +12,7 @@ import Badge from '../ui/Badge';
 import { deliveryStatusMeta, formatPrice, isActiveDelivery } from '../../lib/deliveryUtils';
 import { canTrackAssignedBox } from '../../lib/boxTracking';
 import CustomerTokenMessage from '../CustomerTokenMessage';
+import CustomerUnlockCodePopup from '../CustomerUnlockCodePopup';
 import RiderRouteMap from '../RiderRouteMap';
 import { DashboardPanel, DashboardEmptyState } from './DashboardPanel';
 import DashboardDeliveryList from './DashboardDeliveryList';
@@ -65,6 +66,30 @@ export default function CustomerDashboard() {
     }
   }, [deliveryUpdateTick, token]);
 
+  // Auto-refresh dashboard so unlock code appears without manual reload.
+  useEffect(() => {
+    if (!token) return undefined;
+    const tick = async () => {
+      try {
+        const [list, unlockCodes] = await Promise.all([
+          api.getDeliveries(token),
+          api.getMyUnlockCodes(token).catch(() => []),
+        ]);
+        setDeliveries(mergeDeliveriesWithUnlockCodes(list || [], unlockCodes || []));
+      } catch (err) {
+        if (err?.status === 401) return;
+        console.error(err);
+      }
+    };
+    const id = setInterval(tick, 3000);
+    const onFocus = () => { tick(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [token]);
+
   const activeDeliveries = deliveries.filter((d) => isActiveDelivery(d.status));
   const delivered = deliveries.filter((d) => d.status === 'delivered');
   const historyCount = deliveries.length - activeDeliveries.length;
@@ -105,6 +130,7 @@ export default function CustomerDashboard() {
 
   return (
     <div className="dashboard-page">
+      <CustomerUnlockCodePopup deliveries={deliveries} />
       <div className="dashboard-stats dashboard-stats--4">
         <StatCard icon={Package} label="Total orders" value={deliveries.length} accent="primary" compact />
         <StatCard icon={Clock} label="Active" value={activeDeliveries.length} accent={activeDeliveries.length ? 'warning' : 'success'} compact />
