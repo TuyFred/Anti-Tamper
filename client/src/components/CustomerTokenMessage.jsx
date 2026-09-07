@@ -34,7 +34,7 @@ export default function CustomerTokenMessage({
 }) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
-  const [revealed, setRevealed] = useState(!compact);
+  const [revealed, setRevealed] = useState(true);
 
   if (!delivery?.unlock_token) return null;
 

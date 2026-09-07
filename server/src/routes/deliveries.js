@@ -59,6 +59,7 @@ function sanitizeDelivery(delivery, profile, userId) {
     const hasActive = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
     return {
       ...delivery,
+      unlock_token: delivery.token_closed_at ? null : (delivery.unlock_token ?? null),
       open_permission: permission,
       customer_can_open: hasActive && permission !== 'used',
       rider_can_open: false,

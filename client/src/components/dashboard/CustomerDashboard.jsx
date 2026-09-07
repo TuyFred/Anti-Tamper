@@ -72,8 +72,7 @@ export default function CustomerDashboard() {
   const tokenDelivery = deliveries.find((d) =>
     ['in_transit', 'rider_assigned'].includes(d.status)
     && d.unlock_token
-    && !d.token_closed_at
-    && !(d.token_expires_at && new Date(d.token_expires_at) < new Date()),
+    && !d.token_closed_at,
   );
   const needsTokenRequest = deliveries.find((d) =>
     ['in_transit', 'rider_assigned'].includes(d.status)
@@ -162,12 +161,14 @@ export default function CustomerDashboard() {
 
           {tokenDelivery && (
             <DashboardPanel title="Unlock code" subtitle="Use at the Smart Box" icon="Key" accent="warning">
+              <p className="font-mono text-3xl tracking-[0.35em] text-white font-black text-center mb-4">
+                {String(tokenDelivery.unlock_token).toUpperCase()}
+              </p>
               <CustomerTokenMessage
                 delivery={tokenDelivery}
                 customerName={profile?.full_name}
                 customerEmail={profile?.email}
                 companyName={companyName}
-                compact
               />
               <div className="mt-4">
                 <Link to="/deliveries" className="dashboard-btn dashboard-btn--primary">

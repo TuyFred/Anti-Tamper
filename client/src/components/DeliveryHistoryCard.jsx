@@ -134,6 +134,15 @@ export default function DeliveryHistoryCard({
           )}
           {delivery.device?.device_id && <span>Box {delivery.device.device_id}</span>}
         </div>
+
+        {delivery.unlock_token && !delivery.token_closed_at && (
+          <div className="mt-3 rounded-xl border border-success/35 bg-success/10 px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-wider text-success font-semibold mb-1">Unlock code</p>
+            <p className="font-mono text-xl tracking-[0.3em] text-white font-bold">
+              {String(delivery.unlock_token).toUpperCase()}
+            </p>
+          </div>
+        )}
       </button>
 
       {expanded && (

@@ -91,19 +91,26 @@ export default function CustomerUnlockPanel({
 
   const applyStatusPayload = (data, { notifyParent } = {}) => {
     if (!data || !sameId(data.id, deliveryProp.id)) return;
-    if (!data.unlock_token && !data.token_closed_at && data.open_permission !== 'granted') return;
-    const next = {
-      id: data.id,
-      unlock_token: data.unlock_token || null,
-      token_expires_at: data.token_expires_at || null,
-      token_sent_at: data.token_sent_at || null,
-      token_closed_at: data.token_closed_at || null,
-      open_permission: data.open_permission || null,
-      rider_unlock_granted_at: data.rider_unlock_granted_at || null,
-    };
-    setLiveGrant(next);
-    if (next.unlock_token) writeCachedUnlock(deliveryProp.id, next);
-    if (data.token_closed_at) writeCachedUnlock(deliveryProp.id, null);
+    // Never apply a token-less "granted" bump — that wiped the visible code.
+    if (!data.unlock_token && !data.token_closed_at) return;
+    setLiveGrant((prior) => {
+      const next = {
+        id: data.id,
+        unlock_token: data.unlock_token
+          || (data.token_closed_at ? null : prior?.unlock_token)
+          || null,
+        token_expires_at: data.token_expires_at || prior?.token_expires_at || null,
+        token_sent_at: data.token_sent_at || prior?.token_sent_at || null,
+        token_closed_at: data.token_closed_at || null,
+        open_permission: data.unlock_token && !data.token_closed_at
+          ? 'granted'
+          : (data.open_permission || prior?.open_permission || null),
+        rider_unlock_granted_at: data.rider_unlock_granted_at || prior?.rider_unlock_granted_at || null,
+      };
+      if (next.unlock_token) writeCachedUnlock(deliveryProp.id, next);
+      if (data.token_closed_at) writeCachedUnlock(deliveryProp.id, null);
+      return next;
+    });
     if (notifyParent && data.unlock_token) onUpdated?.();
   };
 
@@ -129,16 +136,14 @@ export default function CustomerUnlockPanel({
     }
 
     let cancelled = false;
-    let gotCode = Boolean(cached?.unlock_token || deliveryProp.unlock_token);
 
     const poll = async () => {
-      if (gotCode || cancelled) return;
+      if (cancelled) return;
       try {
         const list = await api.getDeliveries(authToken);
         if (cancelled) return;
         const row = (list || []).find((d) => sameId(d.id, deliveryProp.id));
         if (row?.unlock_token) {
-          gotCode = true;
           applyStatusPayload(row, { notifyParent: true });
           return;
         }
@@ -149,7 +154,6 @@ export default function CustomerUnlockPanel({
         const status = await api.getDeliveryOpenStatus(authToken, deliveryProp.id);
         if (cancelled) return;
         if (status?.unlock_token) {
-          gotCode = true;
           applyStatusPayload(status, { notifyParent: true });
         }
       } catch {
@@ -180,16 +184,18 @@ export default function CustomerUnlockPanel({
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
   const tokenExpired = Boolean(delivery.token_expires_at)
     && new Date(delivery.token_expires_at) < new Date();
-  const hasCode = Boolean(delivery.unlock_token) && !delivery.token_closed_at && !tokenExpired;
+  // Always show the code on screen whenever it exists (even if near expiry).
+  const showCode = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
+  const hasCode = showCode && !tokenExpired;
   const tokenConsumed = Boolean(delivery.token_closed_at)
     || (!delivery.unlock_token && Boolean(delivery.token_used_at));
   const canOpen = isReady
     && !tokenConsumed
-    && !tokenExpired
+    && (!tokenExpired || Boolean(tokenInput.trim()))
     && (!delivery.token_used_at || delivery.device?.lock_status === 'locked');
   const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
-  const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token && !hasCode;
+  const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token && !showCode;
   const canRequestNewToken = isReady
     && delivery.device_id
     && (tokenConsumed || tokenExpired)
@@ -198,10 +204,10 @@ export default function CustomerUnlockPanel({
   const lockLabel = delivery.device ? formatLockStatusLabel(delivery.device.lock_status) : null;
 
   useEffect(() => {
-    if (hasCode) {
+    if (showCode) {
       setTokenInput(String(delivery.unlock_token).toUpperCase());
     }
-  }, [delivery.id, delivery.unlock_token, hasCode]);
+  }, [delivery.id, delivery.unlock_token, showCode]);
 
   const handleOpen = async () => {
     const code = (tokenInput || delivery.unlock_token || '').trim().toUpperCase();
@@ -270,7 +276,22 @@ export default function CustomerUnlockPanel({
 
   return (
     <div className="space-y-4">
-      {hasCode && (
+      {showCode && (
+        <div className="rounded-2xl border-2 border-success/40 bg-success/10 p-4 sm:p-5 space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-success flex items-center gap-1.5">
+            <Key className="w-4 h-4" />
+            Your unlock code (from admin grant)
+          </p>
+          <p className="text-center font-mono text-3xl sm:text-4xl tracking-[0.35em] text-white font-black">
+            {String(delivery.unlock_token).toUpperCase()}
+          </p>
+          <p className="text-[11px] text-slate-400 text-center">
+            Use this code below to open the Smart Box. Do not share it with the rider.
+          </p>
+        </div>
+      )}
+
+      {showCode && (
         <CustomerTokenMessage
           delivery={delivery}
           customerName={customerName}
@@ -367,9 +388,9 @@ export default function CustomerUnlockPanel({
               <Key className="w-3.5 h-3.5" />
               Step 2 — Unlock code & open
             </p>
-            {!hasCode && (
+            {!showCode && (
               <p className="text-[11px] text-slate-500">
-                Enter the customer code from admin (Operations), or wait a moment — it loads here automatically.
+                Waiting for admin grant… the code will appear above automatically, or enter it if admin shared it.
               </p>
             )}
             <input
