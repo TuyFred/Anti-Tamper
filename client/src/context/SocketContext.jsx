@@ -192,10 +192,14 @@ export function SocketProvider({ children }) {
       }
       setDeliveryLivePatches((prev) => {
         const prior = prev[data.id] || {};
-        const unlock_token = incomingToken !== undefined
-          ? incomingToken
-          : (prior.unlock_token || null);
         const token_closed_at = data.token_closed_at ?? prior.token_closed_at ?? null;
+        // Never wipe a live unlock code with null unless the box was closed / token consumed.
+        let unlock_token = prior.unlock_token || null;
+        if (incomingToken) {
+          unlock_token = incomingToken;
+        } else if (token_closed_at || (hasTokenField && incomingToken === null && data.token_closed_at)) {
+          unlock_token = null;
+        }
         return {
           ...prev,
           [data.id]: {
@@ -211,6 +215,7 @@ export function SocketProvider({ children }) {
               : (token_closed_at ? 'used' : (data.open_permission || prior.open_permission || 'waiting')),
             customer_can_open: Boolean(unlock_token) && !token_closed_at,
             rider_can_open: Boolean(unlock_token) && !token_closed_at,
+            rider_unlock_granted_at: data.rider_unlock_granted_at ?? prior.rider_unlock_granted_at ?? null,
           },
         };
       });

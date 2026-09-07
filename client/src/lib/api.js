@@ -139,6 +139,8 @@ export const api = {
   estimateDelivery: (token, payload) =>
     apiFetch('/api/deliveries/estimate', { method: 'POST', body: JSON.stringify(payload) }, token),
   getDeliveries: (token) => apiFetch('/api/deliveries', {}, token),
+  getDeliveryOpenStatus: (token, id) =>
+    apiFetch(`/api/deliveries/${id}/open-status`, {}, token),
   createDelivery: (token, payload) =>
     apiFetch('/api/deliveries', { method: 'POST', body: JSON.stringify(payload) }, token),
   submitPaymentProof: (token, id, payload) =>

@@ -30,6 +30,7 @@ export function notifyDeliveryUpdate(delivery) {
       unlock_token: delivery.unlock_token || null,
       open_permission: base.open_granted ? 'granted' : (delivery.token_closed_at ? 'used' : 'waiting'),
       customer_can_open: Boolean(delivery.unlock_token) && !delivery.token_closed_at,
+      rider_unlock_granted_at: delivery.rider_unlock_granted_at || null,
     };
     ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:token-sent', customerPayload);
     ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:update', customerPayload);

@@ -14,9 +14,13 @@ export function mergeDeliveriesWithLivePatches(deliveries, patches) {
     if (d.token_closed_at) return d;
 
     const unlock_token = d.unlock_token || patch.unlock_token || null;
-    if (!unlock_token && !patch.token_closed_at) return d;
-
     const token_closed_at = d.token_closed_at || patch.token_closed_at || null;
+    const grantedFlag = patch.open_permission === 'granted'
+      || Boolean(patch.rider_unlock_granted_at)
+      || Boolean(patch.customer_can_open);
+
+    if (!unlock_token && !token_closed_at && !grantedFlag) return d;
+
     const token_expires_at = d.token_expires_at || patch.token_expires_at || null;
     const token_sent_at = d.token_sent_at || patch.token_sent_at || null;
 
@@ -27,7 +31,8 @@ export function mergeDeliveriesWithLivePatches(deliveries, patches) {
       token_sent_at,
       token_closed_at,
       token_requested_at: unlock_token && !token_closed_at ? null : d.token_requested_at,
-      open_permission: unlock_token && !token_closed_at
+      rider_unlock_granted_at: d.rider_unlock_granted_at || patch.rider_unlock_granted_at || null,
+      open_permission: (unlock_token && !token_closed_at) || grantedFlag
         ? 'granted'
         : (token_closed_at ? 'used' : (d.open_permission || 'waiting')),
       customer_can_open: Boolean(unlock_token) && !token_closed_at,

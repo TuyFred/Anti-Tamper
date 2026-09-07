@@ -10,7 +10,7 @@ import CustomerTokenMessage from './CustomerTokenMessage';
 import RiderRouteMap from './RiderRouteMap';
 
 /**
- * Customer open/close: admin grant → code appears live → open → close → confirm.
+ * Customer open/close: admin grant → code appears (socket + poll) → open → close → confirm.
  */
 export default function CustomerUnlockPanel({
   delivery: deliveryProp,
@@ -30,7 +30,6 @@ export default function CustomerUnlockPanel({
   const [completing, setCompleting] = useState(false);
   const [requesting, setRequesting] = useState(false);
 
-  // Apply socket patches + any direct grant payload for this delivery.
   const delivery = useMemo(() => {
     const [merged] = mergeDeliveriesWithLivePatches([deliveryProp], deliveryLivePatches);
     if (!liveGrant || liveGrant.id !== deliveryProp.id) return merged;
@@ -41,40 +40,80 @@ export default function CustomerUnlockPanel({
       token_sent_at: liveGrant.token_sent_at || merged.token_sent_at,
       token_closed_at: liveGrant.token_closed_at ?? merged.token_closed_at,
       token_requested_at: liveGrant.unlock_token ? null : merged.token_requested_at,
-      open_permission: liveGrant.unlock_token && !liveGrant.token_closed_at
+      open_permission: (liveGrant.unlock_token && !liveGrant.token_closed_at)
         ? 'granted'
-        : merged.open_permission,
+        : (liveGrant.open_permission || merged.open_permission),
       customer_can_open: Boolean(liveGrant.unlock_token || merged.unlock_token)
         && !(liveGrant.token_closed_at || merged.token_closed_at),
+      rider_unlock_granted_at: liveGrant.rider_unlock_granted_at || merged.rider_unlock_granted_at,
     };
   }, [deliveryProp, deliveryLivePatches, liveGrant]);
 
-  // Capture unlock code the moment admin grants — do not wait for list refetch.
+  const applyStatusPayload = (data, { notifyParent } = {}) => {
+    if (!data || data.id !== deliveryProp.id) return;
+    if (!data.unlock_token && !data.token_closed_at && data.open_permission !== 'granted') return;
+    setLiveGrant({
+      id: data.id,
+      unlock_token: data.unlock_token || null,
+      token_expires_at: data.token_expires_at || null,
+      token_sent_at: data.token_sent_at || null,
+      token_closed_at: data.token_closed_at || null,
+      open_permission: data.open_permission || null,
+      rider_unlock_granted_at: data.rider_unlock_granted_at || null,
+    });
+    if (notifyParent && data.unlock_token) onUpdated?.();
+  };
+
+  // Live socket grant
   useEffect(() => {
     if (!socket || !deliveryProp?.id) return undefined;
-
-    const applyGrant = (data) => {
-      if (!data || data.id !== deliveryProp.id) return;
-      if (!data.unlock_token && !data.token_closed_at) return;
-      setLiveGrant({
-        id: data.id,
-        unlock_token: data.unlock_token || null,
-        token_expires_at: data.token_expires_at || null,
-        token_sent_at: data.token_sent_at || null,
-        token_closed_at: data.token_closed_at || null,
-      });
-      if (data.unlock_token) onUpdated?.();
-    };
-
-    socket.on('delivery:token-sent', applyGrant);
-    socket.on('delivery:update', applyGrant);
+    const onGrant = (data) => applyStatusPayload(data, { notifyParent: true });
+    socket.on('delivery:token-sent', onGrant);
+    socket.on('delivery:update', onGrant);
     return () => {
-      socket.off('delivery:token-sent', applyGrant);
-      socket.off('delivery:update', applyGrant);
+      socket.off('delivery:token-sent', onGrant);
+      socket.off('delivery:update', onGrant);
     };
   }, [socket, deliveryProp?.id, onUpdated]);
 
-  // If parent already has a code (page reload after grant), clear local override noise.
+  // Poll DB while waiting — works even if sockets miss the grant event.
+  useEffect(() => {
+    if (!authToken || !deliveryProp?.id) return undefined;
+
+    const alreadyHasCode = Boolean(deliveryProp.unlock_token) && !deliveryProp.token_closed_at;
+    if (alreadyHasCode) return undefined;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await api.getDeliveryOpenStatus(authToken, deliveryProp.id);
+        if (cancelled) return;
+        applyStatusPayload(status, { notifyParent: Boolean(status?.unlock_token) });
+      } catch {
+        // Ignore transient poll errors
+      }
+    };
+
+    poll();
+    const id = setInterval(poll, 2000);
+    const onFocus = () => { poll(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [
+    authToken,
+    deliveryProp?.id,
+    deliveryProp?.unlock_token,
+    deliveryProp?.token_closed_at,
+    onUpdated,
+  ]);
+
   useEffect(() => {
     if (deliveryProp?.unlock_token && !deliveryProp.token_closed_at) {
       setLiveGrant(null);
@@ -91,7 +130,6 @@ export default function CustomerUnlockPanel({
     || delivery.open_permission === 'granted'
     || delivery.customer_can_open
     || Boolean(delivery.rider_unlock_granted_at);
-  // Only show waiting when admin has NOT granted and there is no code yet.
   const waitingForGrant = isReady
     && delivery.device_id
     && !hasCode
@@ -230,7 +268,7 @@ export default function CustomerUnlockPanel({
               <div>
                 <p className="text-sm font-semibold text-amber-200">Waiting for open permission</p>
                 <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  When admin grants open permission, your unlock code appears here so you can open the box.
+                  Checking for your unlock code… it will appear here as soon as admin grants permission.
                 </p>
               </div>
             </div>

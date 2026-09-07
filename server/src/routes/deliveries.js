@@ -51,7 +51,7 @@ function openPermissionState(delivery) {
 function sanitizeDelivery(delivery, profile, userId) {
   if (!delivery) return delivery;
   // Owner must always receive the unlock code after admin grant — do not rely only on role name.
-  const isOwner = delivery.customer_id === userId;
+  const isOwner = String(delivery.customer_id || '') === String(userId || '');
   if (isOwner) {
     const permission = openPermissionState(delivery);
     const hasActive = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
@@ -624,6 +624,43 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * Customer/rider: poll for unlock code after admin grant.
+ * Does not depend on sockets — returns the code as soon as it exists in DB.
+ */
+router.get('/:id/open-status', authenticate, requireApproved, async (req, res) => {
+  const delivery = await getDeliveryById(req.params.id);
+  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+
+  const userId = req.user.id;
+  const isOwner = String(delivery.customer_id || '') === String(userId || '');
+  const isAssignedRider = isRider(req.profile) && String(delivery.rider_id || '') === String(userId || '');
+  if (!isOwner && !isAssignedRider && !isManager(req.profile)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const permission = openPermissionState(delivery);
+  const hasActive = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
+  const maySeeCode = isOwner
+    || isManager(req.profile)
+    || (isAssignedRider && permission === 'granted' && hasActive);
+
+  res.json({
+    id: delivery.id,
+    status: delivery.status,
+    open_permission: permission,
+    customer_can_open: isOwner && hasActive && permission !== 'used',
+    rider_can_open: isAssignedRider && hasActive && permission === 'granted' && !delivery.token_used_at,
+    unlock_token: maySeeCode ? (delivery.unlock_token || null) : null,
+    token_expires_at: maySeeCode ? (delivery.token_expires_at || null) : null,
+    token_sent_at: delivery.token_sent_at || null,
+    token_closed_at: delivery.token_closed_at || null,
+    token_used_at: delivery.token_used_at || null,
+    token_requested_at: delivery.token_requested_at || null,
+    rider_unlock_granted_at: delivery.rider_unlock_granted_at || null,
+  });
 });
 
 /** Manager/Admin: send or resend unlock token (customer re-open / also grants rider). */
