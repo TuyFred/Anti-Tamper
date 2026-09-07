@@ -34,8 +34,17 @@ export function notifyDeliveryUpdate(delivery) {
     });
   }
 
-  // Assigned rider also refreshes so My Route shows waiting → granted.
+  // Assigned rider gets the code live once admin grants open permission.
   if (delivery.rider_id) {
-    ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:update', base);
+    const riderPayload = {
+      ...base,
+      unlock_token: (delivery.unlock_token && !delivery.token_closed_at)
+        ? delivery.unlock_token
+        : null,
+    };
+    ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:update', riderPayload);
+    if (riderPayload.unlock_token) {
+      ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:token-sent', riderPayload);
+    }
   }
 }

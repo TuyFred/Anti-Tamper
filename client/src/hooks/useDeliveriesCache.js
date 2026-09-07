@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { api } from '../lib/api';
+import { mergeDeliveriesWithLivePatches } from '../lib/deliveryLivePatch';
 
 let memoryCache = { token: null, data: null };
 
 /** Shared deliveries list — instant sidebar navigation from cache */
 export function useDeliveriesCache() {
   const { token } = useAuth();
-  const { deliveryUpdateTick } = useSocket();
+  const { deliveryUpdateTick, deliveryLivePatches } = useSocket();
   const [deliveries, setDeliveries] = useState(() => (
     token && memoryCache.token === token && memoryCache.data ? memoryCache.data : []
   ));
@@ -61,8 +62,13 @@ export function useDeliveriesCache() {
     refresh(true);
   }, [deliveryUpdateTick, token, refresh]);
 
+  const liveDeliveries = useMemo(
+    () => mergeDeliveriesWithLivePatches(deliveries, deliveryLivePatches),
+    [deliveries, deliveryLivePatches],
+  );
+
   return {
-    deliveries,
+    deliveries: liveDeliveries,
     loading,
     refreshing,
     refresh,

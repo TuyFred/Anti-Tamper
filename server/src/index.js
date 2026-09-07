@@ -97,8 +97,9 @@ app.use('/api/locations', locationsRouter);
 app.use('/api/reports', reportsRouter);
 
 const frontendCandidates = [
-  path.resolve(__dirname, '../web'),
+  // Prefer fresh Vite build (Render buildCommand) over any committed server/web snapshot.
   path.resolve(__dirname, '../../client/dist'),
+  path.resolve(__dirname, '../web'),
 ];
 const frontendDist = frontendCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
 const frontendIndex = frontendDist ? path.join(frontendDist, 'index.html') : '';

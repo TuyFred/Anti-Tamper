@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Package, Clock, CheckCircle2, CreditCard, ArrowRight, Plus, Key,
@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { api } from '../../lib/api';
+import { mergeDeliveriesWithLivePatches } from '../../lib/deliveryLivePatch';
 import StatCard from '../ui/StatCard';
 import Badge from '../ui/Badge';
 import { deliveryStatusMeta, formatPrice, isActiveDelivery } from '../../lib/deliveryUtils';
@@ -20,10 +21,14 @@ import DashboardLoading from './DashboardLoading';
 
 export default function CustomerDashboard() {
   const { token, profile } = useAuth();
-  const { deliveryUpdateTick, alerts } = useSocket();
-  const [deliveries, setDeliveries] = useState([]);
+  const { deliveryUpdateTick, deliveryLivePatches, alerts } = useSocket();
+  const [deliveriesRaw, setDeliveries] = useState([]);
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
+  const deliveries = useMemo(
+    () => mergeDeliveriesWithLivePatches(deliveriesRaw, deliveryLivePatches),
+    [deliveriesRaw, deliveryLivePatches],
+  );
 
   useEffect(() => {
     async function load() {

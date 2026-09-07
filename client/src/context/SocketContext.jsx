@@ -39,6 +39,8 @@ export function SocketProvider({ children }) {
   const [userLocations, setUserLocations] = useState({});
   const [fleetLocations, setFleetLocations] = useState({});
   const [deliveryUpdateTick, setDeliveryUpdateTick] = useState(0);
+  /** Instant unlock codes when admin grants — no customer refresh needed. */
+  const [deliveryLivePatches, setDeliveryLivePatches] = useState({});
 
   useEffect(() => {
     if (!token) {
@@ -49,6 +51,7 @@ export function SocketProvider({ children }) {
       setConnected(false);
       setDeviceTrails({});
       setUserLocations({});
+      setDeliveryLivePatches({});
       setConnectionStatus(defaultConnectionStatus);
       return undefined;
     }
@@ -175,9 +178,36 @@ export function SocketProvider({ children }) {
       });
     });
 
-    const bumpDeliveries = () => setDeliveryUpdateTick((n) => n + 1);
-    s.on('delivery:update', bumpDeliveries);
-    s.on('delivery:token-sent', bumpDeliveries);
+    const applyDeliveryLivePatch = (data) => {
+      if (!data?.id) {
+        setDeliveryUpdateTick((n) => n + 1);
+        return;
+      }
+      if (data.unlock_token || data.token_closed_at || data.open_granted != null) {
+        setDeliveryLivePatches((prev) => ({
+          ...prev,
+          [data.id]: {
+            ...(prev[data.id] || {}),
+            unlock_token: data.unlock_token !== undefined
+              ? data.unlock_token
+              : prev[data.id]?.unlock_token,
+            token_expires_at: data.token_expires_at ?? prev[data.id]?.token_expires_at ?? null,
+            token_sent_at: data.token_sent_at ?? prev[data.id]?.token_sent_at ?? null,
+            token_closed_at: data.token_closed_at ?? prev[data.id]?.token_closed_at ?? null,
+            token_requested_at: data.unlock_token ? null : (prev[data.id]?.token_requested_at ?? null),
+            status: data.status ?? prev[data.id]?.status,
+            open_permission: data.unlock_token && !data.token_closed_at
+              ? 'granted'
+              : (data.token_closed_at ? 'used' : prev[data.id]?.open_permission),
+            customer_can_open: Boolean(data.unlock_token) && !data.token_closed_at,
+            rider_can_open: Boolean(data.unlock_token) && !data.token_closed_at && !data.token_used_at,
+          },
+        }));
+      }
+      setDeliveryUpdateTick((n) => n + 1);
+    };
+    s.on('delivery:update', applyDeliveryLivePatch);
+    s.on('delivery:token-sent', applyDeliveryLivePatch);
 
     s.on('user:location', (data) => {
       if (!data?.deliveryId || !data?.userId) return;
@@ -245,8 +275,8 @@ export function SocketProvider({ children }) {
       s.off('reconnect', handleReconnect);
       s.off('reconnect_error', handleConnectError);
       s.off('system:status', handleSystemStatus);
-      s.off('delivery:update', bumpDeliveries);
-      s.off('delivery:token-sent', bumpDeliveries);
+      s.off('delivery:update', applyDeliveryLivePatch);
+      s.off('delivery:token-sent', applyDeliveryLivePatch);
       s.off('user:location');
       s.off('user:location:snapshot');
       s.off('user:location:left');
@@ -258,6 +288,7 @@ export function SocketProvider({ children }) {
       setConnected(false);
       setUserLocations({});
       setFleetLocations({});
+      setDeliveryLivePatches({});
     };
   }, [token]);
 
@@ -317,6 +348,7 @@ export function SocketProvider({ children }) {
         userLocations,
         fleetLocations,
         deliveryUpdateTick,
+        deliveryLivePatches,
         setInitialDevices,
         setInitialAlerts,
         acknowledgeAlertLocal,

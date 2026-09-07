@@ -1,7 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '../lib/api';
+import { useSocket } from '../context/SocketContext';
+import { mergeDeliveriesWithLivePatches } from '../lib/deliveryLivePatch';
 
 export function useCustomerDeliveries(token, deliveryUpdateTick) {
+  const { deliveryLivePatches } = useSocket();
   const [config, setConfig] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +46,11 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
   useEffect(() => {
     if (token && deliveryUpdateTick > 0) load();
   }, [deliveryUpdateTick, token, load]);
+
+  const liveDeliveries = useMemo(
+    () => mergeDeliveriesWithLivePatches(deliveries, deliveryLivePatches),
+    [deliveries, deliveryLivePatches],
+  );
 
   const estimateApi = useCallback(
     (payload) => api.estimateDelivery(token, payload),
@@ -128,7 +136,7 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
 
   return {
     config,
-    deliveries,
+    deliveries: liveDeliveries,
     loading,
     error,
     setError,

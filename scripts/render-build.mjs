@@ -3,6 +3,7 @@
  * at the same URL as the API (https://anti-tamper.onrender.com).
  */
 import { spawnSync } from 'child_process';
+import { cpSync, existsSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -33,4 +34,17 @@ const result = spawnSync('npm', ['run', 'build'], {
   env: process.env,
 });
 
-process.exit(result.status ?? 1);
+if ((result.status ?? 1) !== 0) {
+  process.exit(result.status ?? 1);
+}
+
+// Keep server/web in sync so Express always has a ready bundle even if dist path differs.
+const webDir = join(root, 'server', 'web');
+const distDir = join(clientDir, 'dist');
+if (existsSync(distDir)) {
+  rmSync(webDir, { recursive: true, force: true });
+  cpSync(distDir, webDir, { recursive: true });
+  console.log('Copied client/dist → server/web');
+}
+
+process.exit(0);
