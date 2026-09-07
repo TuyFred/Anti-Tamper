@@ -72,37 +72,42 @@ export default function CustomerUnlockPanel({
 
   const delivery = useMemo(() => {
     const [merged] = mergeDeliveriesWithLivePatches([deliveryProp], deliveryLivePatches);
-    if (!liveGrant || !sameId(liveGrant.id, deliveryProp.id)) return merged;
-    return {
+    const base = {
       ...merged,
-      unlock_token: liveGrant.unlock_token || merged.unlock_token,
-      token_expires_at: liveGrant.token_expires_at || merged.token_expires_at,
-      token_sent_at: liveGrant.token_sent_at || merged.token_sent_at,
-      token_closed_at: liveGrant.token_closed_at ?? merged.token_closed_at,
-      token_requested_at: liveGrant.unlock_token ? null : merged.token_requested_at,
+      unlock_token: merged.unlock_token || merged.unlock_code || null,
+    };
+    if (!liveGrant || !sameId(liveGrant.id, deliveryProp.id)) return base;
+    return {
+      ...base,
+      unlock_token: liveGrant.unlock_token || base.unlock_token,
+      token_expires_at: liveGrant.token_expires_at || base.token_expires_at,
+      token_sent_at: liveGrant.token_sent_at || base.token_sent_at,
+      token_closed_at: liveGrant.token_closed_at ?? base.token_closed_at,
+      token_requested_at: liveGrant.unlock_token ? null : base.token_requested_at,
       open_permission: (liveGrant.unlock_token && !liveGrant.token_closed_at)
         ? 'granted'
-        : (liveGrant.open_permission || merged.open_permission),
-      customer_can_open: Boolean(liveGrant.unlock_token || merged.unlock_token)
-        && !(liveGrant.token_closed_at || merged.token_closed_at),
-      rider_unlock_granted_at: liveGrant.rider_unlock_granted_at || merged.rider_unlock_granted_at,
+        : (liveGrant.open_permission || base.open_permission),
+      customer_can_open: Boolean(liveGrant.unlock_token || base.unlock_token)
+        && !(liveGrant.token_closed_at || base.token_closed_at),
+      rider_unlock_granted_at: liveGrant.rider_unlock_granted_at || base.rider_unlock_granted_at,
     };
   }, [deliveryProp, deliveryLivePatches, liveGrant]);
 
   const applyStatusPayload = (data, { notifyParent } = {}) => {
     if (!data || !sameId(data.id, deliveryProp.id)) return;
+    const code = data.unlock_token || data.unlock_code || null;
     // Never apply a token-less "granted" bump — that wiped the visible code.
-    if (!data.unlock_token && !data.token_closed_at) return;
+    if (!code && !data.token_closed_at) return;
     setLiveGrant((prior) => {
       const next = {
         id: data.id,
-        unlock_token: data.unlock_token
+        unlock_token: code
           || (data.token_closed_at ? null : prior?.unlock_token)
           || null,
         token_expires_at: data.token_expires_at || prior?.token_expires_at || null,
         token_sent_at: data.token_sent_at || prior?.token_sent_at || null,
         token_closed_at: data.token_closed_at || null,
-        open_permission: data.unlock_token && !data.token_closed_at
+        open_permission: code && !data.token_closed_at
           ? 'granted'
           : (data.open_permission || prior?.open_permission || null),
         rider_unlock_granted_at: data.rider_unlock_granted_at || prior?.rider_unlock_granted_at || null,
@@ -111,7 +116,7 @@ export default function CustomerUnlockPanel({
       if (data.token_closed_at) writeCachedUnlock(deliveryProp.id, null);
       return next;
     });
-    if (notifyParent && data.unlock_token) onUpdated?.();
+    if (notifyParent && code) onUpdated?.();
   };
 
   useEffect(() => {
@@ -125,50 +130,69 @@ export default function CustomerUnlockPanel({
     };
   }, [socket, deliveryProp?.id, onUpdated]);
 
-  // Pull unlock code from deliveries list (always available) — avoids open-status 404 spam.
+  // Pull unlock code from deliveries list once granted — stop on auth failure / when code arrives.
   useEffect(() => {
     if (!authToken || !deliveryProp?.id) return undefined;
     if (deliveryProp.token_closed_at) return undefined;
+    if (deliveryProp.unlock_token) return undefined;
 
     const cached = readCachedUnlock(deliveryProp.id);
     if (cached?.unlock_token) {
       setLiveGrant(cached);
+      return undefined;
     }
 
     let cancelled = false;
+    let timer = null;
+    let authDead = false;
+
+    const stop = () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
 
     const poll = async () => {
-      if (cancelled) return;
+      if (cancelled || authDead || !authToken) return;
+      try {
+        const codes = await api.getMyUnlockCodes(authToken);
+        if (cancelled) return;
+        const row = (codes || []).find((d) => sameId(d.id, deliveryProp.id));
+        if (row?.unlock_token || row?.unlock_code) {
+          applyStatusPayload(row, { notifyParent: true });
+          stop();
+          return;
+        }
+      } catch (err) {
+        if (err?.status === 401) {
+          authDead = true;
+          stop();
+          return;
+        }
+      }
       try {
         const list = await api.getDeliveries(authToken);
         if (cancelled) return;
         const row = (list || []).find((d) => sameId(d.id, deliveryProp.id));
-        if (row?.unlock_token) {
+        if (row?.unlock_token || row?.unlock_code) {
           applyStatusPayload(row, { notifyParent: true });
-          return;
+          stop();
         }
-      } catch {
-        // ignore list errors
-      }
-      try {
-        const status = await api.getDeliveryOpenStatus(authToken, deliveryProp.id);
-        if (cancelled) return;
-        if (status?.unlock_token) {
-          applyStatusPayload(status, { notifyParent: true });
+      } catch (err) {
+        if (err?.status === 401) {
+          authDead = true;
+          stop();
         }
-      } catch {
-        // open-code may 404 on old deploys — list poll above is enough
       }
     };
 
     poll();
-    const id = setInterval(poll, 2500);
+    timer = setInterval(poll, 4000);
     const onFocus = () => { poll(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
     return () => {
-      cancelled = true;
-      clearInterval(id);
+      stop();
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };

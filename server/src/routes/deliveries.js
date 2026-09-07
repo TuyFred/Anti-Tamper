@@ -53,14 +53,17 @@ function openPermissionState(delivery) {
 function sanitizeDelivery(delivery, profile, userId) {
   if (!delivery) return delivery;
   // Owner must always receive the unlock code after admin grant — do not rely only on role name.
-  const isOwner = String(delivery.customer_id || '') === String(userId || '');
+  const isOwner = String(delivery.customer_id || '').toLowerCase() === String(userId || '').toLowerCase();
   if (isOwner) {
     const permission = openPermissionState(delivery);
-    const hasActive = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
+    const code = delivery.token_closed_at ? null : (delivery.unlock_token ?? null);
+    const hasActive = Boolean(code);
     return {
       ...delivery,
-      unlock_token: delivery.token_closed_at ? null : (delivery.unlock_token ?? null),
-      open_permission: permission,
+      unlock_token: code,
+      // Alias so older/newer clients both find the code.
+      unlock_code: code,
+      open_permission: hasActive ? 'granted' : permission,
       customer_can_open: hasActive && permission !== 'used',
       rider_can_open: false,
     };
@@ -213,6 +216,11 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
 
   if (error) throw new Error(error.message);
 
+  // Guarantee the issued code is on the returned row (select joins can omit fields).
+  if (!data.unlock_token) {
+    data = { ...data, ...payload, unlock_token: token };
+  }
+
   await logActivity({
     entityType: 'delivery',
     entityId: data.id,
@@ -221,8 +229,16 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
     summary,
   });
 
+  console.log(
+    `Unlock code issued for delivery ${data.id} → customer ${data.customer_id || delivery.customer_id}`,
+  );
+
   // Push unlock code to the customer dashboard immediately (socket).
-  notifyDeliveryUpdate(data);
+  notifyDeliveryUpdate({
+    ...data,
+    customer_id: data.customer_id || delivery.customer_id,
+    unlock_token: data.unlock_token || token,
+  });
 
   // Also email the customer so they always receive the code after admin grant.
   const customerEmail = data.customer?.email;
@@ -333,6 +349,38 @@ router.get('/', authenticate, requireApproved, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(sanitizeDeliveries(data, req.profile, req.user.id));
+});
+
+/**
+ * Customer-only: active unlock codes (minimal payload).
+ * Used by the app so the code is never lost behind list UI / role checks.
+ */
+router.get('/my-unlock-codes', authenticate, requireApproved, async (req, res) => {
+  const { data, error } = await supabase
+    .from('delivery_requests')
+    .select('id, status, unlock_token, token_expires_at, token_sent_at, token_closed_at, customer_id')
+    .eq('customer_id', req.user.id)
+    .in('status', ['rider_assigned', 'in_transit'])
+    .not('unlock_token', 'is', null)
+    .is('token_closed_at', null)
+    .order('token_sent_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const codes = (data || [])
+    .filter((row) => row.unlock_token)
+    .map((row) => ({
+      id: row.id,
+      status: row.status,
+      unlock_token: row.unlock_token,
+      unlock_code: row.unlock_token,
+      token_expires_at: row.token_expires_at,
+      token_sent_at: row.token_sent_at,
+      open_permission: 'granted',
+      customer_can_open: true,
+    }));
+
+  res.json(codes);
 });
 
 router.post('/', authenticate, requireApproved, async (req, res) => {

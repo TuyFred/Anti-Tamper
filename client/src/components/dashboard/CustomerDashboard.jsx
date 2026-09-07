@@ -6,7 +6,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { api } from '../../lib/api';
-import { mergeDeliveriesWithLivePatches } from '../../lib/deliveryLivePatch';
+import { mergeDeliveriesWithLivePatches, mergeDeliveriesWithUnlockCodes } from '../../lib/deliveryLivePatch';
 import StatCard from '../ui/StatCard';
 import Badge from '../ui/Badge';
 import { deliveryStatusMeta, formatPrice, isActiveDelivery } from '../../lib/deliveryUtils';
@@ -33,11 +33,12 @@ export default function CustomerDashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [list, cfg] = await Promise.all([
+        const [list, cfg, unlockCodes] = await Promise.all([
           api.getDeliveries(token),
           api.getDeliveryConfig(token),
+          api.getMyUnlockCodes(token).catch(() => []),
         ]);
-        setDeliveries(list);
+        setDeliveries(mergeDeliveriesWithUnlockCodes(list || [], unlockCodes || []));
         setConfig(cfg);
       } catch (err) {
         console.error(err);
@@ -52,7 +53,11 @@ export default function CustomerDashboard() {
     if (token && deliveryUpdateTick > 0) {
       (async () => {
         try {
-          setDeliveries(await api.getDeliveries(token));
+          const [list, unlockCodes] = await Promise.all([
+            api.getDeliveries(token),
+            api.getMyUnlockCodes(token).catch(() => []),
+          ]);
+          setDeliveries(mergeDeliveriesWithUnlockCodes(list || [], unlockCodes || []));
         } catch (err) {
           console.error(err);
         }
@@ -71,16 +76,23 @@ export default function CustomerDashboard() {
   );
   const tokenDelivery = deliveries.find((d) =>
     ['in_transit', 'rider_assigned'].includes(d.status)
-    && d.unlock_token
+    && (d.unlock_token || d.unlock_code)
     && !d.token_closed_at,
   );
   const needsTokenRequest = deliveries.find((d) =>
     ['in_transit', 'rider_assigned'].includes(d.status)
     && d.device_id
     && (
-      d.token_closed_at
-      || !d.unlock_token
-      || (d.token_expires_at && new Date(d.token_expires_at) < new Date())
+      Boolean(d.token_closed_at)
+      || (
+        Boolean(d.token_used_at)
+        && !(d.unlock_token || d.unlock_code)
+      )
+      || (
+        (d.unlock_token || d.unlock_code)
+        && d.token_expires_at
+        && new Date(d.token_expires_at) < new Date()
+      )
     ),
   );
   const unreadAlerts = alerts.filter((a) => !a.is_acknowledged).length;
@@ -140,7 +152,7 @@ export default function CustomerDashboard() {
                   <Link to="/deliveries" className="dashboard-btn dashboard-btn--soft flex-1">
                     Manage <ArrowRight className="w-4 h-4" />
                   </Link>
-                  {['in_transit', 'rider_assigned'].includes(activeTransit.status) && activeTransit.unlock_token && (
+                  {['in_transit', 'rider_assigned'].includes(activeTransit.status) && (activeTransit.unlock_token || activeTransit.unlock_code) && (
                     <Link to="/deliveries" className="dashboard-btn dashboard-btn--warning">
                       <Key className="w-4 h-4" /> Unlock
                     </Link>
@@ -162,7 +174,7 @@ export default function CustomerDashboard() {
           {tokenDelivery && (
             <DashboardPanel title="Unlock code" subtitle="Use at the Smart Box" icon="Key" accent="warning">
               <p className="font-mono text-3xl tracking-[0.35em] text-white font-black text-center mb-4">
-                {String(tokenDelivery.unlock_token).toUpperCase()}
+                {String(tokenDelivery.unlock_token || tokenDelivery.unlock_code).toUpperCase()}
               </p>
               <CustomerTokenMessage
                 delivery={tokenDelivery}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
-import { mergeDeliveriesWithLivePatches } from '../lib/deliveryLivePatch';
+import { mergeDeliveriesWithLivePatches, mergeDeliveriesWithUnlockCodes } from '../lib/deliveryLivePatch';
 
 export function useCustomerDeliveries(token, deliveryUpdateTick) {
   const { deliveryLivePatches } = useSocket();
@@ -19,20 +19,31 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
   const [reviewSubmittingId, setReviewSubmittingId] = useState(null);
 
   const load = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     try {
-      const [cfg, list, reviewList] = await Promise.all([
+      const [cfg, list, reviewList, unlockCodes] = await Promise.all([
         api.getDeliveryConfig(token),
         api.getDeliveries(token),
         api.getReviews(token).catch(() => []),
+        api.getMyUnlockCodes(token).catch(() => []),
       ]);
       setConfig(cfg);
-      setDeliveries(list);
+      setDeliveries(mergeDeliveriesWithUnlockCodes(list || [], unlockCodes || []));
       const byDelivery = {};
       for (const r of reviewList || []) {
         if (r.delivery_id) byDelivery[r.delivery_id] = r;
       }
       setSubmittedReviews(byDelivery);
+      setError('');
     } catch (err) {
+      if (err?.status === 401) {
+        setDeliveries([]);
+        setError('Session expired — please sign in again');
+        return;
+      }
       setError(err.message);
     } finally {
       setLoading(false);

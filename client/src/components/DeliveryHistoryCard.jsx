@@ -86,11 +86,15 @@ export default function DeliveryHistoryCard({
   const receipt = showReceipt ? getReceiptBreakdown(delivery, config) : null;
   const customerName = profile?.full_name || profile?.email;
 
+  const isOwner = Boolean(profile?.id)
+    && String(profile.id).toLowerCase() === String(delivery.customer_id || '').toLowerCase();
   const needsPayment = delivery.status === 'awaiting_payment';
   const awaitingConfirm = delivery.status === 'payment_submitted';
   const canTrack = ['payment_verified', 'rider_assigned', 'in_transit'].includes(delivery.status);
-  const canUnlock = isCustomer && ['rider_assigned', 'in_transit'].includes(delivery.status);
-  const canReview = delivery.status === 'delivered' && isCustomer && !submittedReview;
+  const canUnlock = (isCustomer || isOwner)
+    && ['rider_assigned', 'in_transit'].includes(delivery.status);
+  const unlockCode = delivery.unlock_token || delivery.unlock_code;
+  const canReview = delivery.status === 'delivered' && (isCustomer || isOwner) && !submittedReview;
   const hasReview = Boolean(submittedReview);
 
   return (
@@ -135,11 +139,11 @@ export default function DeliveryHistoryCard({
           {delivery.device?.device_id && <span>Box {delivery.device.device_id}</span>}
         </div>
 
-        {delivery.unlock_token && !delivery.token_closed_at && (
+        {unlockCode && !delivery.token_closed_at && (
           <div className="mt-3 rounded-xl border border-success/35 bg-success/10 px-3 py-2.5">
             <p className="text-[10px] uppercase tracking-wider text-success font-semibold mb-1">Unlock code</p>
             <p className="font-mono text-xl tracking-[0.3em] text-white font-bold">
-              {String(delivery.unlock_token).toUpperCase()}
+              {String(unlockCode).toUpperCase()}
             </p>
           </div>
         )}

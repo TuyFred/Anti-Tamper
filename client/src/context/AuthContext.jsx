@@ -51,7 +51,24 @@ export function AuthProvider({ children }) {
       }
     });
 
+    let handlingExpired = false;
     const onAuthExpired = async () => {
+      if (handlingExpired) return;
+      handlingExpired = true;
+      try {
+        // Prefer a silent refresh over an immediate logout when the access token
+        // is stale but the refresh token is still valid.
+        const { data, error } = await supabase.auth.refreshSession();
+        if (!error && data?.session?.access_token) {
+          setSession(data.session);
+          await loadProfile(data.session.access_token);
+          handlingExpired = false;
+          if (typeof window !== 'undefined') window.__authExpiredAt = 0;
+          return;
+        }
+      } catch {
+        /* fall through to sign-out */
+      }
       try {
         await supabase.auth.signOut();
       } catch {

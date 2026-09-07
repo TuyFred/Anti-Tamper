@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { X, Shield } from 'lucide-react';
@@ -17,6 +17,8 @@ export default function MobileNavDrawer({
   children,
   footer,
 }) {
+  const panelRef = useRef(null);
+
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.body.style.overflow;
@@ -30,6 +32,18 @@ export default function MobileNavDrawer({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
+
+  // Avoid aria-hidden on an ancestor that still contains focus (Chrome a11y warning).
+  useEffect(() => {
+    if (open) return undefined;
+    const root = panelRef.current;
+    if (!root) return undefined;
+    const active = document.activeElement;
+    if (active && root.contains(active) && typeof active.blur === 'function') {
+      active.blur();
+    }
+    return undefined;
+  }, [open]);
 
   const panelSide = side === 'right'
     ? 'right-0 border-l animate-slide-in-right'
@@ -50,10 +64,12 @@ export default function MobileNavDrawer({
       />
 
       <aside
+        ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={open ? 'true' : undefined}
         aria-label={title}
         aria-hidden={!open}
+        inert={!open || undefined}
         className={`fixed inset-y-0 z-[100] w-[min(340px,92vw)] flex flex-col sidebar-gradient shadow-2xl border-border transition-transform duration-300 ease-out lg:hidden ${panelSide} ${
           open ? 'translate-x-0 pointer-events-auto' : `${closedTransform} pointer-events-none`
         }`}
@@ -62,6 +78,7 @@ export default function MobileNavDrawer({
           <Link
             to={logoHref}
             onClick={onClose}
+            tabIndex={open ? 0 : -1}
             className="flex items-center gap-3 min-w-0 flex-1"
           >
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
@@ -78,6 +95,7 @@ export default function MobileNavDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close menu"
+            tabIndex={open ? 0 : -1}
             className="p-2.5 rounded-xl bg-surface-lighter border border-border text-slate-300 hover:text-white transition shrink-0 touch-manipulation"
           >
             <X className="w-6 h-6" />

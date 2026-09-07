@@ -67,9 +67,14 @@ export async function apiFetch(path, options = {}, token) {
     error.status = res.status;
     error.code = data.code;
     if (res.status === 401 && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('auth:expired', {
-        detail: { path, message: error.message },
-      }));
+      // One redirect signal — polling must not spam auth:expired / console 401s.
+      const now = Date.now();
+      if (!window.__authExpiredAt || now - window.__authExpiredAt > 4000) {
+        window.__authExpiredAt = now;
+        window.dispatchEvent(new CustomEvent('auth:expired', {
+          detail: { path, message: error.message },
+        }));
+      }
       error.message = 'Session expired — please sign in again';
     }
     throw error;
@@ -139,6 +144,7 @@ export const api = {
   estimateDelivery: (token, payload) =>
     apiFetch('/api/deliveries/estimate', { method: 'POST', body: JSON.stringify(payload) }, token),
   getDeliveries: (token) => apiFetch('/api/deliveries', {}, token),
+  getMyUnlockCodes: (token) => apiFetch('/api/deliveries/my-unlock-codes', {}, token),
   getDeliveryOpenStatus: (token, id) =>
     apiFetch(`/api/deliveries/open-code/${id}`, {}, token),
   createDelivery: (token, payload) =>
