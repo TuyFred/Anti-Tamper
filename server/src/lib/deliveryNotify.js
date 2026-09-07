@@ -24,15 +24,24 @@ export function notifyDeliveryUpdate(delivery) {
 
   // Customer receives the unlock code after admin grant (customer opens the box).
   if (delivery.customer_id) {
+    const code = delivery.unlock_token || delivery.unlock_code || null;
     const customerPayload = {
       ...base,
-      unlock_token: delivery.unlock_token || null,
+      unlock_token: code,
+      unlock_code: code,
       open_permission: base.open_granted ? 'granted' : (delivery.token_closed_at ? 'used' : 'waiting'),
-      customer_can_open: Boolean(delivery.unlock_token) && !delivery.token_closed_at,
+      customer_can_open: Boolean(code) && !delivery.token_closed_at,
       rider_unlock_granted_at: delivery.rider_unlock_granted_at || null,
     };
-    ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:token-sent', customerPayload);
-    ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:update', customerPayload);
+    const room = `user:${delivery.customer_id}`;
+    ioInstance.to(room).emit('delivery:token-sent', customerPayload);
+    ioInstance.to(room).emit('delivery:update', customerPayload);
+    // Second push shortly after in case the client connected mid-grant.
+    setTimeout(() => {
+      if (!ioInstance) return;
+      ioInstance.to(room).emit('delivery:token-sent', customerPayload);
+      ioInstance.to(room).emit('delivery:update', customerPayload);
+    }, 1200);
   }
 
   // Rider: status only — never the unlock code (customer opens).

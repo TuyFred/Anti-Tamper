@@ -183,8 +183,11 @@ export function SocketProvider({ children }) {
         setDeliveryUpdateTick((n) => n + 1);
         return;
       }
-      const hasTokenField = Object.prototype.hasOwnProperty.call(data, 'unlock_token');
-      const incomingToken = hasTokenField ? data.unlock_token : undefined;
+      const hasTokenField = Object.prototype.hasOwnProperty.call(data, 'unlock_token')
+        || Object.prototype.hasOwnProperty.call(data, 'unlock_code');
+      const incomingToken = hasTokenField
+        ? (data.unlock_token || data.unlock_code || null)
+        : undefined;
       // Ignore token-less manager bumps — never clear an existing live unlock code.
       if (!incomingToken && !data.token_closed_at && !hasTokenField) {
         setDeliveryUpdateTick((n) => n + 1);
@@ -205,6 +208,7 @@ export function SocketProvider({ children }) {
           [data.id]: {
             ...prior,
             unlock_token,
+            unlock_code: unlock_token,
             token_expires_at: data.token_expires_at ?? prior.token_expires_at ?? null,
             token_sent_at: data.token_sent_at ?? prior.token_sent_at ?? null,
             token_closed_at,
@@ -214,7 +218,7 @@ export function SocketProvider({ children }) {
               ? 'granted'
               : (token_closed_at ? 'used' : (data.open_permission || prior.open_permission || 'waiting')),
             customer_can_open: Boolean(unlock_token) && !token_closed_at,
-            rider_can_open: Boolean(unlock_token) && !token_closed_at,
+            rider_can_open: false,
             rider_unlock_granted_at: data.rider_unlock_granted_at ?? prior.rider_unlock_granted_at ?? null,
           },
         };

@@ -5,9 +5,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 
 import Layout from './components/Layout';
-
 import ActiveLocationShare from './components/ActiveLocationShare';
-
+import CustomerUnlockWatcher from './components/CustomerUnlockWatcher';
 import { prefetchAppRoutes } from './lib/routePrefetch';
 
 
@@ -132,22 +131,15 @@ function ProtectedRoute({
 
 
 function AppLayout({ children }) {
-
   return (
-
     <Layout>
       <ActiveLocationShare />
-
+      <CustomerUnlockWatcher />
       <Suspense fallback={<InlinePageLoader />}>
-
         {children}
-
       </Suspense>
-
     </Layout>
-
   );
-
 }
 
 

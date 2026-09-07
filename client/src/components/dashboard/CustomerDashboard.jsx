@@ -12,7 +12,6 @@ import Badge from '../ui/Badge';
 import { deliveryStatusMeta, formatPrice, isActiveDelivery } from '../../lib/deliveryUtils';
 import { canTrackAssignedBox } from '../../lib/boxTracking';
 import CustomerTokenMessage from '../CustomerTokenMessage';
-import CustomerUnlockCodePopup from '../CustomerUnlockCodePopup';
 import RiderRouteMap from '../RiderRouteMap';
 import { DashboardPanel, DashboardEmptyState } from './DashboardPanel';
 import DashboardDeliveryList from './DashboardDeliveryList';
@@ -130,7 +129,6 @@ export default function CustomerDashboard() {
 
   return (
     <div className="dashboard-page">
-      <CustomerUnlockCodePopup deliveries={deliveries} />
       <div className="dashboard-stats dashboard-stats--4">
         <StatCard icon={Package} label="Total orders" value={deliveries.length} accent="primary" compact />
         <StatCard icon={Clock} label="Active" value={activeDeliveries.length} accent={activeDeliveries.length ? 'warning' : 'success'} compact />

@@ -225,6 +225,23 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
     data = { ...data, ...payload, unlock_token: token };
   }
 
+  // Hard verify the code was persisted (never claim grant success without DB write).
+  const { data: verified, error: verifyError } = await supabase
+    .from('delivery_requests')
+    .select('id, customer_id, unlock_token, token_sent_at, token_expires_at, token_closed_at, status')
+    .eq('id', delivery.id)
+    .single();
+  if (verifyError || !verified?.unlock_token) {
+    throw new Error(verifyError?.message || 'Unlock code failed to save — tap Grant open permission again');
+  }
+  data = {
+    ...data,
+    ...verified,
+    unlock_token: verified.unlock_token,
+    customer: data.customer || delivery.customer || null,
+    customer_id: verified.customer_id || data.customer_id || delivery.customer_id,
+  };
+
   await logActivity({
     entityType: 'delivery',
     entityId: data.id,
@@ -242,6 +259,7 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
     ...data,
     customer_id: data.customer_id || delivery.customer_id,
     unlock_token: data.unlock_token || token,
+    unlock_code: data.unlock_token || token,
   });
 
   // Also email the customer so they always receive the code after admin grant.
