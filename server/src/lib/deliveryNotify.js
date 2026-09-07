@@ -8,16 +8,34 @@ export function setDeliveryIo(io) {
 export function notifyDeliveryUpdate(delivery) {
   if (!ioInstance || !delivery?.id) return;
 
-  const payload = {
+  const base = {
     id: delivery.id,
     customer_id: delivery.customer_id,
+    rider_id: delivery.rider_id || null,
     token_sent_at: delivery.token_sent_at || null,
+    token_expires_at: delivery.token_expires_at || null,
+    token_closed_at: delivery.token_closed_at || null,
     status: delivery.status,
+    open_granted: Boolean(delivery.unlock_token) && !delivery.token_closed_at,
   };
 
-  ioInstance.to('approved').emit('delivery:update', payload);
+  // Managers/riders get a bump without exposing the code on the shared channel.
+  ioInstance.to('approved').emit('delivery:update', base);
 
+  // Customer receives the unlock code immediately after admin grant.
   if (delivery.customer_id) {
-    ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:token-sent', payload);
+    ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:token-sent', {
+      ...base,
+      unlock_token: delivery.unlock_token || null,
+    });
+    ioInstance.to(`user:${delivery.customer_id}`).emit('delivery:update', {
+      ...base,
+      unlock_token: delivery.unlock_token || null,
+    });
+  }
+
+  // Assigned rider also refreshes so My Route shows waiting → granted.
+  if (delivery.rider_id) {
+    ioInstance.to(`user:${delivery.rider_id}`).emit('delivery:update', base);
   }
 }

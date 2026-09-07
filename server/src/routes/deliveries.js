@@ -47,13 +47,18 @@ function openPermissionState(delivery) {
   return 'waiting';
 }
 
-/** Unlock token: customer always (own delivery); assigned rider only after open permission is granted. */
+/** Unlock token: delivery owner (customer) always; assigned rider only after open permission is granted. */
 function sanitizeDelivery(delivery, profile, userId) {
   if (!delivery) return delivery;
-  if (isCustomer(profile) && delivery.customer_id === userId) {
+  // Owner must always receive the unlock code after admin grant — do not rely only on role name.
+  const isOwner = delivery.customer_id === userId;
+  if (isOwner) {
     return {
       ...delivery,
       open_permission: openPermissionState(delivery),
+      customer_can_open: Boolean(delivery.unlock_token)
+        && !delivery.token_closed_at
+        && openPermissionState(delivery) !== 'used',
     };
   }
 
@@ -72,6 +77,7 @@ function sanitizeDelivery(delivery, profile, userId) {
 
   sanitized.open_permission = permission;
   sanitized.rider_can_open = riderMaySeeCode && !delivery.token_used_at;
+  sanitized.customer_can_open = false;
 
   if (isManager(profile)) {
     const hasActiveToken = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
@@ -79,10 +85,12 @@ function sanitizeDelivery(delivery, profile, userId) {
     sanitized.rider_open_granted = permission === 'granted' || permission === 'used';
     sanitized.token_request_pending = Boolean(delivery.token_requested_at);
     sanitized.token_delivery = hasActiveToken ? {
-      channel: permission === 'granted' ? 'rider_and_customer' : 'customer_inbox',
-      recipient_email: delivery.rider?.email || delivery.customer?.email || null,
-      recipient_name: delivery.rider?.full_name || delivery.customer?.full_name || null,
+      channel: 'customer_and_rider',
+      recipient_email: delivery.customer?.email || delivery.rider?.email || null,
+      recipient_name: delivery.customer?.full_name || delivery.rider?.full_name || null,
       sent_at: delivery.rider_unlock_granted_at || delivery.token_sent_at || delivery.updated_at,
+      unlock_token: delivery.unlock_token,
+      token_expires_at: delivery.token_expires_at,
     } : null;
   }
 
@@ -603,13 +611,15 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
     const data = await issueUnlockToken(
       delivery,
       req.user.id,
-      'Open permission granted — unlock code issued to assigned rider',
+      'Open permission granted — unlock code issued to customer and rider',
       { grantToRider: true },
     );
 
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: 'Open permission granted. Customer and assigned rider can now see the unlock code and open the Smart Box.',
+      message: 'Open permission granted. Customer can now see the unlock code on their dashboard and open the Smart Box.',
+      unlock_token: data.unlock_token,
+      token_expires_at: data.token_expires_at,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

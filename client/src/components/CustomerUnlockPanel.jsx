@@ -37,6 +37,15 @@ export default function CustomerUnlockPanel({
     && !hasCode
     && !tokenConsumed
     && !delivery.token_requested_at;
+
+  // While waiting, poll so the customer sees the code as soon as admin grants — even if sockets lag.
+  useEffect(() => {
+    if (!waitingForGrant || !authToken || !onUpdated) return undefined;
+    const id = setInterval(() => {
+      onUpdated?.();
+    }, 2500);
+    return () => clearInterval(id);
+  }, [waitingForGrant, authToken, onUpdated, delivery.id]);
   const canOpen = isReady && hasCode && (!delivery.token_used_at || delivery.device?.lock_status === 'locked');
   const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
@@ -161,15 +170,24 @@ export default function CustomerUnlockPanel({
         </div>
 
         {waitingForGrant && (
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-            <ShieldAlert className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-amber-200">Waiting for open permission</p>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Your rider is on the way and you can track the box. The unlock code appears here after
-                an admin/manager grants open permission. Then you can open and close the Smart Box.
-              </p>
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+            <div className="flex items-start gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-200">Waiting for open permission</p>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  Admin must tap <span className="text-white font-medium">Grant open permission</span> in Operations.
+                  Your unlock code will appear here automatically — this page refreshes every few seconds.
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => onUpdated?.()}
+              className="w-full py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-100 text-sm font-semibold"
+            >
+              Refresh now — check for my code
+            </button>
           </div>
         )}
 

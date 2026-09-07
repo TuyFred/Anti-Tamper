@@ -135,7 +135,12 @@ export default function Operations() {
 
   const handleGrantOpen = (id) => runAction(async () => {
     const result = await api.grantDeliveryOpen(token, id);
-    setSuccess(result?.message || 'Open permission granted — rider can now open the box.');
+    const code = result?.unlock_token || result?.token_delivery?.unlock_token;
+    setSuccess(
+      code
+        ? `${result?.message || 'Open permission granted.'} Code for customer: ${code}`
+        : (result?.message || 'Open permission granted — customer can now open the box.'),
+    );
     return result;
   }, id);
 
@@ -394,11 +399,16 @@ export default function Operations() {
                           {d.open_permission === 'used'
                             ? 'Open code used — grant again if needed'
                             : (d.rider_open_granted || d.open_permission === 'granted')
-                              ? 'Open permission granted — rider has unlock code'
-                              : 'Open permission pending — rider can track only'}
+                              ? 'Open permission granted — customer & rider have the code'
+                              : 'Open permission pending — customer waiting for code'}
                         </p>
+                        {(d.token_delivery?.unlock_token || d.unlock_token) && (d.rider_open_granted || d.open_permission === 'granted') && (
+                          <p className="text-sm font-mono tracking-widest text-white bg-surface/80 border border-success/30 rounded-lg px-3 py-2">
+                            Code: {d.token_delivery?.unlock_token || d.unlock_token}
+                          </p>
+                        )}
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          After grant, the unlock code appears for the customer and the rider so they can open and close the box.
+                          After grant, the customer sees the unlock code on Dashboard / Deliveries and can Open then Close the box.
                         </p>
                         <button
                           type="button"
