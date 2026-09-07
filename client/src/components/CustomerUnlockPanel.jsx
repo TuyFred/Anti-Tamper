@@ -37,7 +37,7 @@ export default function CustomerUnlockPanel({
     && !hasCode
     && !tokenConsumed
     && !delivery.token_requested_at;
-  const canOpen = isReady && hasCode && !delivery.token_used_at;
+  const canOpen = isReady && hasCode && (!delivery.token_used_at || delivery.device?.lock_status === 'locked');
   const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
   const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token;

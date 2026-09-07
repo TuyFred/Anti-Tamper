@@ -134,6 +134,15 @@ async function unlockDevice(deviceRow, userId) {
   if (!deviceRow?.device_id) {
     throw new Error('No Smart Box assigned to this delivery');
   }
+
+  const lastSeenMs = deviceRow.last_seen ? new Date(deviceRow.last_seen).getTime() : 0;
+  const onlineRecently = lastSeenMs && (Date.now() - lastSeenMs) < 90_000;
+  if (!onlineRecently) {
+    throw new Error(
+      'Smart Box is offline (no recent GPS/status from ESP32). Power the box, wait until Serial shows [MQTT] Connected, then try Open again.',
+    );
+  }
+
   try {
     sendDeviceCommand(deviceRow.device_id, 'unlock', { authorized: true, user_id: userId });
   } catch (err) {
@@ -744,7 +753,28 @@ router.post('/:id/unlock', authenticate, requireApproved, async (req, res) => {
     return res.status(400).json({ error: 'Unlock code already used — ask manager for a new one.' });
   }
   if (delivery.token_used_at && !delivery.token_closed_at) {
-    return res.status(400).json({ error: 'Box already opened — close it to finish before using the code again.' });
+    // Software already marked open, but hardware may still be locked (ESP was offline).
+    // Re-send unlock command with the same valid code instead of blocking the customer.
+    if (!delivery.device) {
+      return res.status(400).json({ error: 'No Smart Box assigned to this delivery' });
+    }
+    if (delivery.device.lock_status === 'unlocked') {
+      return res.status(400).json({
+        error: 'Box already opened — close it to finish before using the code again.',
+      });
+    }
+    try {
+      await unlockDevice(delivery.device, req.user.id);
+      return res.json({
+        ...sanitizeDelivery(delivery, req.profile, req.user.id),
+        message: 'Open command sent again — Smart Box should unlock now. Then Close when done.',
+        mqttSent: true,
+        resent: true,
+      });
+    } catch (err) {
+      const offline = /Hardware link offline|MQTT|offline/i.test(err.message || '');
+      return res.status(offline ? 503 : 500).json({ error: err.message });
+    }
   }
   if (delivery.token_expires_at && new Date(delivery.token_expires_at) < new Date()) {
     return res.status(400).json({ error: 'Unlock code expired — ask manager to send a new one' });
