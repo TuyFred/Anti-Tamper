@@ -136,9 +136,10 @@ export default function Operations() {
   const handleGrantOpen = (id) => runAction(async () => {
     const result = await api.grantDeliveryOpen(token, id);
     const code = result?.unlock_token || result?.token_delivery?.unlock_token;
+    const email = result?.customer_email || result?.customer?.email;
     setSuccess(
       code
-        ? `${result?.message || 'Open permission granted.'} Customer code: ${code} (also emailed to customer)`
+        ? `Code ${code} sent to customer${email ? ` (${email})` : ''} — tell them to open My deliveries`
         : (result?.message || 'Open permission granted — customer can now open the box.'),
     );
     return result;

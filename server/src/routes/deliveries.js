@@ -178,8 +178,9 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
   const expires = new Date();
   expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
   const now = new Date().toISOString();
-  const grantToRider = Boolean(options.grantToRider);
 
+  // Customer opens the box. Never write rider_unlock_granted_* — many production DBs
+  // lack those columns and PostgREST rejects the whole UPDATE (code never saved).
   const payload = {
     unlock_token: token,
     token_expires_at: expires.toISOString(),
@@ -190,28 +191,31 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
     updated_at: now,
   };
 
-  if (grantToRider) {
-    payload.rider_unlock_granted_at = now;
-    payload.rider_unlock_granted_by = actorId;
-  }
-
-  let { data, error } = await supabase
+  const runUpdate = (selectExpr) => supabase
     .from('delivery_requests')
     .update(payload)
     .eq('id', delivery.id)
-    .select(getDeliverySelect())
+    .select(selectExpr)
     .single();
 
-  // Older DBs may not have rider grant columns yet — retry without them.
-  if (error && /rider_unlock_granted/i.test(error.message || '')) {
-    delete payload.rider_unlock_granted_at;
-    delete payload.rider_unlock_granted_by;
-    ({ data, error } = await supabase
-      .from('delivery_requests')
-      .update(payload)
-      .eq('id', delivery.id)
-      .select(getDeliverySelect())
-      .single());
+  let { data, error } = await runUpdate(getDeliverySelect());
+
+  // Fall back if join/select shape fails after a successful schema mismatch or phone column issue.
+  if (error) {
+    console.warn('issueUnlockToken select failed, retrying simpler select:', error.message);
+    ({ data, error } = await runUpdate(
+      '*, customer:profiles!delivery_requests_customer_id_fkey(id, email, full_name)',
+    ));
+  }
+  if (error) {
+    ({ data, error } = await runUpdate('*'));
+    if (!error && data) {
+      data = {
+        ...data,
+        customer: delivery.customer || null,
+        customer_id: data.customer_id || delivery.customer_id,
+      };
+    }
   }
 
   if (error) throw new Error(error.message);
@@ -224,7 +228,7 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
   await logActivity({
     entityType: 'delivery',
     entityId: data.id,
-    action: grantToRider ? 'rider_open_granted' : 'token_sent',
+    action: 'token_sent',
     actorId,
     summary,
   });
@@ -241,12 +245,12 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
   });
 
   // Also email the customer so they always receive the code after admin grant.
-  const customerEmail = data.customer?.email;
+  const customerEmail = data.customer?.email || delivery.customer?.email;
   if (customerEmail && data.unlock_token) {
     sendCustomerUnlockCodeEmail(customerEmail, {
       code: data.unlock_token,
-      customerName: data.customer?.full_name || null,
-      deliveryAddress: data.delivery_address || null,
+      customerName: data.customer?.full_name || delivery.customer?.full_name || null,
+      deliveryAddress: data.delivery_address || delivery.delivery_address || null,
       expiresAt: data.token_expires_at
         ? formatDateTimeFull(data.token_expires_at, { withSeconds: false })
         : null,
@@ -628,8 +632,6 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     token_used_at: null,
     token_closed_at: null,
     token_requested_at: null,
-    rider_unlock_granted_at: null,
-    rider_unlock_granted_by: null,
     updated_at: now,
   };
 
@@ -640,14 +642,21 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
     .select(getDeliverySelect())
     .single();
 
-  if (error && /rider_unlock_granted/i.test(error.message || '')) {
-    delete assignPayload.rider_unlock_granted_at;
-    delete assignPayload.rider_unlock_granted_by;
+  if (error && handleDeliveryQueryError(error)) {
     ({ data, error } = await supabase
       .from('delivery_requests')
       .update(assignPayload)
       .eq('id', delivery.id)
       .select(getDeliverySelect())
+      .single());
+  }
+
+  if (error) {
+    ({ data, error } = await supabase
+      .from('delivery_requests')
+      .update(assignPayload)
+      .eq('id', delivery.id)
+      .select('*')
       .single());
   }
 
@@ -687,14 +696,14 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
       delivery,
       req.user.id,
       'Open permission granted — unlock code issued to customer',
-      { grantToRider: true },
     );
 
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: 'Open permission granted. Unlock code sent to the customer (app + email) — they can open the Smart Box.',
+      message: `Open permission granted. Unlock code sent to ${data.customer?.email || 'the customer'} (app + email).`,
       unlock_token: data.unlock_token,
       token_expires_at: data.token_expires_at,
+      customer_email: data.customer?.email || delivery.customer?.email || null,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -785,13 +794,13 @@ router.post('/:id/send-token', authenticate, requireApproved, requireManager, as
       delivery.token_closed_at || delivery.token_requested_at
         ? 'New unlock token resent to customer after opening request'
         : 'Unlock token sent to customer — open permission granted',
-      { grantToRider: Boolean(delivery.rider_id) },
     );
 
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: 'Unlock code sent to the customer — they can open the Smart Box from Dashboard / Deliveries.',
+      message: `Unlock code sent to ${data.customer?.email || 'the customer'} — they can open the Smart Box from Dashboard / Deliveries.`,
       unlock_token: data.unlock_token,
+      customer_email: data.customer?.email || delivery.customer?.email || null,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
