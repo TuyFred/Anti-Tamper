@@ -25,8 +25,13 @@ export async function apiFetch(path, options = {}, token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const attempts = typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/i.test(window.location.hostname)
-    ? 3
+  const method = (options.method || 'GET').toUpperCase();
+  const isMutation = method !== 'GET' && method !== 'HEAD';
+  // Retries only for wake-up / network blips on GET. Mutations must be fast and single-shot.
+  const attempts = (!isMutation
+    && typeof window !== 'undefined'
+    && !/localhost|127\.0\.0\.1/i.test(window.location.hostname))
+    ? 2
     : 1;
   let res;
   let lastError;
@@ -38,7 +43,7 @@ export async function apiFetch(path, options = {}, token) {
       if (contentType.includes('text/html')) {
         lastError = networkError(path);
         if (attempt < attempts) {
-          await new Promise((resolve) => setTimeout(resolve, 4000 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
           continue;
         }
         throw lastError;
@@ -48,7 +53,7 @@ export async function apiFetch(path, options = {}, token) {
     } catch (err) {
       lastError = err.code === 'NETWORK_ERROR' ? err : networkError(path);
       if (attempt < attempts) {
-        await new Promise((resolve) => setTimeout(resolve, 4000 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
         continue;
       }
       throw lastError;

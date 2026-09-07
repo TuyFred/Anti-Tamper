@@ -6,7 +6,7 @@ import {
 } from '../middleware/auth.js';
 import { isCustomer, isManager, isRider } from '../middleware/permissions.js';
 import { calculateDeliveryPrice, generateUnlockToken } from '../services/pricing.js';
-import { sendDeviceCommand, broadcastDeviceUpdate } from '../mqtt/handler.js';
+import { sendDeviceCommand, broadcastDeviceUpdate, isMqttConnected } from '../mqtt/handler.js';
 import {
   logDeliveryStatus, logPaymentEvent, logActivity,
 } from '../lib/activityLog.js';
@@ -134,12 +134,9 @@ async function unlockDevice(deviceRow, userId) {
   if (!deviceRow?.device_id) {
     throw new Error('No Smart Box assigned to this delivery');
   }
-
-  const lastSeenMs = deviceRow.last_seen ? new Date(deviceRow.last_seen).getTime() : 0;
-  const onlineRecently = lastSeenMs && (Date.now() - lastSeenMs) < 90_000;
-  if (!onlineRecently) {
+  if (!isMqttConnected()) {
     throw new Error(
-      'Smart Box is offline (no recent GPS/status from ESP32). Power the box, wait until Serial shows [MQTT] Connected, then try Open again.',
+      'Hardware link offline — Smart Box did not receive open command. Check server MQTT, then try again.',
     );
   }
 
@@ -155,7 +152,7 @@ async function unlockDevice(deviceRow, userId) {
   const updatedAt = new Date().toISOString();
   await supabase
     .from('devices')
-    .update({ lock_status: 'unlocked', updated_at: updatedAt })
+    .update({ lock_status: 'unlocked', updated_at: updatedAt, is_online: true, last_seen: updatedAt })
     .eq('id', deviceRow.id);
   broadcastDeviceUpdate({ ...deviceRow, lock_status: 'unlocked', updated_at: updatedAt, is_online: true });
   return { mqttSent: true };

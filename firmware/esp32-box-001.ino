@@ -56,9 +56,9 @@ const unsigned long MPU_SAMPLE_MS = 15;
 const unsigned long GPS_PRINT_MS = 5000;
 const unsigned long GPS_PUBLISH_MS = 3000;
 const unsigned long GPS_BAUD_RETRY_MS = 20000;
-const unsigned long STATUS_PUBLISH_MS = 5000;
-const unsigned long WIFI_RETRY_MS = 10000;
-const unsigned long MQTT_RETRY_MS = 3000;
+const unsigned long STATUS_PUBLISH_MS = 2000;
+const unsigned long WIFI_RETRY_MS = 8000;
+const unsigned long MQTT_RETRY_MS = 2000;
 
 // MPU6050 — real impact only (hand-waves / vibration stay below threshold)
 const int32_t SHOCK_THRESHOLD = 8000;

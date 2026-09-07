@@ -35,9 +35,9 @@ export function initMqtt(io) {
   const options = {
     clientId: `anti-tamper-server-${Date.now()}`,
     clean: true,
-    reconnectPeriod: 8000,
-    connectTimeout: 20000,
-    keepalive: 45,
+    reconnectPeriod: 2000,
+    connectTimeout: 10000,
+    keepalive: 30,
     resubscribe: true,
   };
 
