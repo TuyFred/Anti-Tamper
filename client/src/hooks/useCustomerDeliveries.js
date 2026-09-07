@@ -47,6 +47,12 @@ export function useCustomerDeliveries(token, deliveryUpdateTick) {
     if (token && deliveryUpdateTick > 0) load();
   }, [deliveryUpdateTick, token, load]);
 
+  // Apply live unlock codes into list state immediately (do not wait for refetch).
+  useEffect(() => {
+    if (!deliveryLivePatches || !Object.keys(deliveryLivePatches).length) return;
+    setDeliveries((prev) => mergeDeliveriesWithLivePatches(prev, deliveryLivePatches));
+  }, [deliveryLivePatches]);
+
   const liveDeliveries = useMemo(
     () => mergeDeliveriesWithLivePatches(deliveries, deliveryLivePatches),
     [deliveries, deliveryLivePatches],

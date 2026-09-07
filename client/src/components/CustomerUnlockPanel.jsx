@@ -13,6 +13,42 @@ function sameId(a, b) {
   return String(a || '').toLowerCase() === String(b || '').toLowerCase();
 }
 
+function unlockCacheKey(deliveryId) {
+  return `smartbox:unlock:${deliveryId}`;
+}
+
+function readCachedUnlock(deliveryId) {
+  try {
+    const raw = sessionStorage.getItem(unlockCacheKey(deliveryId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.unlock_token || parsed.token_closed_at) return null;
+    if (parsed.token_expires_at && new Date(parsed.token_expires_at) < new Date()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUnlock(deliveryId, payload) {
+  try {
+    if (!payload?.unlock_token || payload.token_closed_at) {
+      sessionStorage.removeItem(unlockCacheKey(deliveryId));
+      return;
+    }
+    sessionStorage.setItem(unlockCacheKey(deliveryId), JSON.stringify({
+      id: deliveryId,
+      unlock_token: payload.unlock_token,
+      token_expires_at: payload.token_expires_at || null,
+      token_sent_at: payload.token_sent_at || null,
+      token_closed_at: null,
+      open_permission: 'granted',
+    }));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 /**
  * Customer open/close: after admin grant, show code and open/close — no waiting banner.
  */
@@ -27,7 +63,7 @@ export default function CustomerUnlockPanel({
   onSuccess,
 }) {
   const { socket, deliveryLivePatches } = useSocket();
-  const [liveGrant, setLiveGrant] = useState(null);
+  const [liveGrant, setLiveGrant] = useState(() => readCachedUnlock(deliveryProp?.id));
   const [tokenInput, setTokenInput] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [locking, setLocking] = useState(false);
@@ -56,7 +92,7 @@ export default function CustomerUnlockPanel({
   const applyStatusPayload = (data, { notifyParent } = {}) => {
     if (!data || !sameId(data.id, deliveryProp.id)) return;
     if (!data.unlock_token && !data.token_closed_at && data.open_permission !== 'granted') return;
-    setLiveGrant({
+    const next = {
       id: data.id,
       unlock_token: data.unlock_token || null,
       token_expires_at: data.token_expires_at || null,
@@ -64,7 +100,10 @@ export default function CustomerUnlockPanel({
       token_closed_at: data.token_closed_at || null,
       open_permission: data.open_permission || null,
       rider_unlock_granted_at: data.rider_unlock_granted_at || null,
-    });
+    };
+    setLiveGrant(next);
+    if (next.unlock_token) writeCachedUnlock(deliveryProp.id, next);
+    if (data.token_closed_at) writeCachedUnlock(deliveryProp.id, null);
     if (notifyParent && data.unlock_token) onUpdated?.();
   };
 
@@ -83,6 +122,11 @@ export default function CustomerUnlockPanel({
   useEffect(() => {
     if (!authToken || !deliveryProp?.id) return undefined;
     if (deliveryProp.token_closed_at) return undefined;
+
+    const cached = readCachedUnlock(deliveryProp.id);
+    if (cached?.unlock_token) {
+      setLiveGrant(cached);
+    }
 
     let cancelled = false;
     const poll = async () => {
@@ -103,7 +147,7 @@ export default function CustomerUnlockPanel({
     };
 
     poll();
-    const id = setInterval(poll, 1500);
+    const id = setInterval(poll, 1200);
     const onFocus = () => { poll(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
@@ -114,6 +158,13 @@ export default function CustomerUnlockPanel({
       document.removeEventListener('visibilitychange', onFocus);
     };
   }, [authToken, deliveryProp?.id, deliveryProp?.token_closed_at, onUpdated]);
+
+  // Stop needing cache once parent list has the code from API.
+  useEffect(() => {
+    if (deliveryProp?.unlock_token && !deliveryProp.token_closed_at) {
+      writeCachedUnlock(deliveryProp.id, deliveryProp);
+    }
+  }, [deliveryProp?.id, deliveryProp?.unlock_token, deliveryProp?.token_closed_at]);
 
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
   const tokenExpired = Boolean(delivery.token_expires_at)
@@ -167,6 +218,7 @@ export default function CustomerUnlockPanel({
       const result = await api.customerLockDelivery(authToken, delivery.id);
       onSuccess?.(result?.message || 'Smart Box closed — unlock code used');
       setLiveGrant(null);
+      writeCachedUnlock(delivery.id, null);
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);

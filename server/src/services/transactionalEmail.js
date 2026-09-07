@@ -72,6 +72,32 @@ export async function sendPasswordResetOtpEmail(to, code) {
   });
 }
 
+/** Unlock code for the customer after admin grants open permission. */
+export async function sendCustomerUnlockCodeEmail(to, {
+  code,
+  customerName,
+  deliveryAddress,
+  expiresAt,
+}) {
+  const name = customerName || 'Customer';
+  const expireLine = expiresAt
+    ? ` This code is valid until ${expiresAt}.`
+    : '';
+  const html = buildOtpEmailHtml({
+    title: 'Your Smart Box unlock code',
+    intro: `Hi ${name}, admin granted open permission. Use this code on your Dashboard / Deliveries to open the Smart Box at: ${deliveryAddress || 'your delivery address'}.${expireLine}`,
+    code,
+    footer: 'Only you should use this code. Do not share it with the rider.',
+  });
+
+  return sendMail({
+    to,
+    subject: `${code} — Your Smart Box unlock code`,
+    html,
+    text: `Your Smart Box unlock code is ${code}. Open Dashboard / Deliveries, enter this code, then Open Smart Box.${expireLine}`,
+  });
+}
+
 export function ensureEmailReady() {
   if (!config.email.enabled) {
     return 'Email is disabled. Set EMAIL_ENABLED=true in server/.env';

@@ -15,6 +15,8 @@ import {
   getDeliverySelect,
   handleDeliveryQueryError,
 } from '../lib/deliverySelect.js';
+import { sendCustomerUnlockCodeEmail } from '../services/transactionalEmail.js';
+import { formatDateTimeFull } from '../lib/datetime.js';
 
 const router = Router();
 
@@ -218,7 +220,32 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
     summary,
   });
 
+  // Push unlock code to the customer dashboard immediately (socket).
   notifyDeliveryUpdate(data);
+
+  // Also email the customer so they always receive the code after admin grant.
+  const customerEmail = data.customer?.email;
+  if (customerEmail && data.unlock_token) {
+    sendCustomerUnlockCodeEmail(customerEmail, {
+      code: data.unlock_token,
+      customerName: data.customer?.full_name || null,
+      deliveryAddress: data.delivery_address || null,
+      expiresAt: data.token_expires_at
+        ? formatDateTimeFull(data.token_expires_at, { withSeconds: false })
+        : null,
+    }).then((result) => {
+      if (result?.ok === false || result?.error) {
+        console.warn('Unlock code email not sent:', result?.error || result);
+      } else {
+        console.log(`Unlock code emailed to customer ${customerEmail} for delivery ${data.id}`);
+      }
+    }).catch((err) => {
+      console.warn('Unlock code email failed:', err?.message || err);
+    });
+  } else if (!customerEmail) {
+    console.warn(`No customer email for delivery ${data.id} — unlock code is in-app only`);
+  }
+
   return data;
 }
 
@@ -588,11 +615,11 @@ router.post('/:id/assign-rider', authenticate, requireApproved, requireManager, 
   notifyDeliveryUpdate(data);
   res.json({
     ...sanitizeDelivery(data, req.profile, req.user.id),
-    message: 'Rider assigned. Rider can track the box. Grant open permission when ready so the rider receives the unlock code.',
+    message: 'Rider assigned. Rider can track the box. Grant open permission when ready so the customer receives the unlock code.',
   });
 });
 
-/** Manager/Admin: grant assigned rider permission to open — issues unlock code. */
+/** Manager/Admin: grant open permission — issues unlock code to the customer only. */
 router.post('/:id/grant-open', authenticate, requireApproved, requireManager, async (req, res) => {
   const delivery = await getDeliveryById(req.params.id);
   if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
@@ -616,7 +643,7 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
 
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: 'Open permission granted. Unlock code sent to the customer — they can open the Smart Box.',
+      message: 'Open permission granted. Unlock code sent to the customer (app + email) — they can open the Smart Box.',
       unlock_token: data.unlock_token,
       token_expires_at: data.token_expires_at,
     });
@@ -630,34 +657,39 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
  * Does not depend on sockets — returns the code as soon as it exists in DB.
  */
 router.get('/:id/open-status', authenticate, requireApproved, async (req, res) => {
-  const delivery = await getDeliveryById(req.params.id);
-  if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+  // Direct column read — reliable unlock code for customer after admin grant.
+  const { data: row, error } = await supabase
+    .from('delivery_requests')
+    .select('id, customer_id, rider_id, status, unlock_token, token_expires_at, token_sent_at, token_closed_at, token_used_at, token_requested_at, rider_unlock_granted_at')
+    .eq('id', req.params.id)
+    .single();
+
+  if (error || !row) return res.status(404).json({ error: 'Delivery not found' });
 
   const userId = req.user.id;
-  const isOwner = String(delivery.customer_id || '') === String(userId || '');
-  const isAssignedRider = isRider(req.profile) && String(delivery.rider_id || '') === String(userId || '');
+  const isOwner = String(row.customer_id || '') === String(userId || '');
+  const isAssignedRider = isRider(req.profile) && String(row.rider_id || '') === String(userId || '');
   if (!isOwner && !isAssignedRider && !isManager(req.profile)) {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  const permission = openPermissionState(delivery);
-  const hasActive = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
-  // Customer (owner) and managers see the code. Rider never does.
+  const permission = openPermissionState(row);
+  const hasActive = Boolean(row.unlock_token) && !row.token_closed_at;
   const maySeeCode = isOwner || isManager(req.profile);
 
   res.json({
-    id: delivery.id,
-    status: delivery.status,
+    id: row.id,
+    status: row.status,
     open_permission: permission,
     customer_can_open: isOwner && hasActive && permission !== 'used',
     rider_can_open: false,
-    unlock_token: maySeeCode ? (delivery.unlock_token || null) : null,
-    token_expires_at: maySeeCode ? (delivery.token_expires_at || null) : null,
-    token_sent_at: delivery.token_sent_at || null,
-    token_closed_at: delivery.token_closed_at || null,
-    token_used_at: delivery.token_used_at || null,
-    token_requested_at: delivery.token_requested_at || null,
-    rider_unlock_granted_at: delivery.rider_unlock_granted_at || null,
+    unlock_token: maySeeCode ? (row.unlock_token || null) : null,
+    token_expires_at: maySeeCode ? (row.token_expires_at || null) : null,
+    token_sent_at: row.token_sent_at || null,
+    token_closed_at: row.token_closed_at || null,
+    token_used_at: row.token_used_at || null,
+    token_requested_at: row.token_requested_at || null,
+    rider_unlock_granted_at: row.rider_unlock_granted_at || null,
     customer_open_granted: permission === 'granted',
   });
 });

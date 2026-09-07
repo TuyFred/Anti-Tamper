@@ -138,7 +138,7 @@ export default function Operations() {
     const code = result?.unlock_token || result?.token_delivery?.unlock_token;
     setSuccess(
       code
-        ? `${result?.message || 'Open permission granted.'} Customer code: ${code}`
+        ? `${result?.message || 'Open permission granted.'} Customer code: ${code} (also emailed to customer)`
         : (result?.message || 'Open permission granted — customer can now open the box.'),
     );
     return result;
