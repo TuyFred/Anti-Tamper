@@ -1,17 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle, ShieldAlert,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useSocket } from '../context/SocketContext';
+import { mergeDeliveriesWithLivePatches } from '../lib/deliveryLivePatch';
 import { formatLockStatusLabel, isBoxOpen } from '../lib/deliveryUtils';
 import CustomerTokenMessage from './CustomerTokenMessage';
 import RiderRouteMap from './RiderRouteMap';
 
 /**
- * Customer open/close: wait for admin grant → get code → open → close → confirm.
+ * Customer open/close: admin grant → code appears live → open → close → confirm.
  */
 export default function CustomerUnlockPanel({
-  delivery,
+  delivery: deliveryProp,
   token: authToken,
   customerName,
   customerEmail,
@@ -20,11 +22,64 @@ export default function CustomerUnlockPanel({
   onError,
   onSuccess,
 }) {
+  const { socket, deliveryLivePatches } = useSocket();
+  const [liveGrant, setLiveGrant] = useState(null);
   const [tokenInput, setTokenInput] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [locking, setLocking] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [requesting, setRequesting] = useState(false);
+
+  // Apply socket patches + any direct grant payload for this delivery.
+  const delivery = useMemo(() => {
+    const [merged] = mergeDeliveriesWithLivePatches([deliveryProp], deliveryLivePatches);
+    if (!liveGrant || liveGrant.id !== deliveryProp.id) return merged;
+    return {
+      ...merged,
+      unlock_token: liveGrant.unlock_token || merged.unlock_token,
+      token_expires_at: liveGrant.token_expires_at || merged.token_expires_at,
+      token_sent_at: liveGrant.token_sent_at || merged.token_sent_at,
+      token_closed_at: liveGrant.token_closed_at ?? merged.token_closed_at,
+      token_requested_at: liveGrant.unlock_token ? null : merged.token_requested_at,
+      open_permission: liveGrant.unlock_token && !liveGrant.token_closed_at
+        ? 'granted'
+        : merged.open_permission,
+      customer_can_open: Boolean(liveGrant.unlock_token || merged.unlock_token)
+        && !(liveGrant.token_closed_at || merged.token_closed_at),
+    };
+  }, [deliveryProp, deliveryLivePatches, liveGrant]);
+
+  // Capture unlock code the moment admin grants — do not wait for list refetch.
+  useEffect(() => {
+    if (!socket || !deliveryProp?.id) return undefined;
+
+    const applyGrant = (data) => {
+      if (!data || data.id !== deliveryProp.id) return;
+      if (!data.unlock_token && !data.token_closed_at) return;
+      setLiveGrant({
+        id: data.id,
+        unlock_token: data.unlock_token || null,
+        token_expires_at: data.token_expires_at || null,
+        token_sent_at: data.token_sent_at || null,
+        token_closed_at: data.token_closed_at || null,
+      });
+      if (data.unlock_token) onUpdated?.();
+    };
+
+    socket.on('delivery:token-sent', applyGrant);
+    socket.on('delivery:update', applyGrant);
+    return () => {
+      socket.off('delivery:token-sent', applyGrant);
+      socket.off('delivery:update', applyGrant);
+    };
+  }, [socket, deliveryProp?.id, onUpdated]);
+
+  // If parent already has a code (page reload after grant), clear local override noise.
+  useEffect(() => {
+    if (deliveryProp?.unlock_token && !deliveryProp.token_closed_at) {
+      setLiveGrant(null);
+    }
+  }, [deliveryProp?.id, deliveryProp?.unlock_token, deliveryProp?.token_closed_at]);
 
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
   const tokenExpired = Boolean(delivery.token_expires_at)
@@ -32,19 +87,25 @@ export default function CustomerUnlockPanel({
   const hasCode = Boolean(delivery.unlock_token) && !delivery.token_closed_at && !tokenExpired;
   const tokenConsumed = Boolean(delivery.token_closed_at)
     || (!delivery.unlock_token && Boolean(delivery.token_used_at));
+  const granted = hasCode
+    || delivery.open_permission === 'granted'
+    || delivery.customer_can_open
+    || Boolean(delivery.rider_unlock_granted_at);
+  // Only show waiting when admin has NOT granted and there is no code yet.
   const waitingForGrant = isReady
     && delivery.device_id
     && !hasCode
+    && !granted
     && !tokenConsumed
     && !delivery.token_requested_at;
 
   const canOpen = isReady && hasCode && (!delivery.token_used_at || delivery.device?.lock_status === 'locked');
   const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
-  const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token;
+  const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token && !hasCode;
   const canRequestNewToken = isReady
     && delivery.device_id
-    && (tokenConsumed || tokenExpired || (!delivery.unlock_token && !waitingForGrant))
+    && (tokenConsumed || tokenExpired || (!delivery.unlock_token && !waitingForGrant && !granted))
     && !delivery.token_requested_at;
   const boxIsOpen = delivery.device ? isBoxOpen(delivery.device.lock_status) : false;
   const lockLabel = delivery.device ? formatLockStatusLabel(delivery.device.lock_status) : null;
@@ -78,6 +139,7 @@ export default function CustomerUnlockPanel({
     try {
       const result = await api.customerLockDelivery(authToken, delivery.id);
       onSuccess?.(result?.message || 'Smart Box closed — unlock code used');
+      setLiveGrant(null);
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);
@@ -149,7 +211,7 @@ export default function CustomerUnlockPanel({
           <div>
             <p className="text-sm font-bold text-white">Smart Box — open & close</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              1) Wait for code · 2) Open · 3) Close · 4) Confirm receipt
+              1) Get code · 2) Open · 3) Close · 4) Confirm receipt
             </p>
           </div>
           {delivery.device && lockLabel && (
@@ -168,8 +230,7 @@ export default function CustomerUnlockPanel({
               <div>
                 <p className="text-sm font-semibold text-amber-200">Waiting for open permission</p>
                 <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  When admin grants open permission, your unlock code appears here automatically.
-                  Then enter it (or tap Open) to unlock the box.
+                  When admin grants open permission, your unlock code appears here so you can open the box.
                 </p>
               </div>
             </div>
@@ -212,23 +273,17 @@ export default function CustomerUnlockPanel({
           </div>
         )}
 
-        {(canRequestNewToken || waitingForGrant) && (
+        {canRequestNewToken && (
           <div className="space-y-2">
             <button
               type="button"
               onClick={handleRequestToken}
-              disabled={requesting || waitingForGrant}
+              disabled={requesting}
               className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-              title={waitingForGrant ? 'Wait for admin grant, or ask admin in Operations' : undefined}
             >
               {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-              {waitingForGrant ? 'Waiting for admin grant…' : 'Request box opening'}
+              Request box opening
             </button>
-            {waitingForGrant && (
-              <p className="text-[11px] text-slate-500 text-center">
-                Admin: Operations → Grant open permission (code is sent to customer + rider).
-              </p>
-            )}
           </div>
         )}
 

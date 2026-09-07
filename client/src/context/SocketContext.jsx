@@ -183,27 +183,37 @@ export function SocketProvider({ children }) {
         setDeliveryUpdateTick((n) => n + 1);
         return;
       }
-      if (data.unlock_token || data.token_closed_at || data.open_granted != null) {
-        setDeliveryLivePatches((prev) => ({
+      const hasTokenField = Object.prototype.hasOwnProperty.call(data, 'unlock_token');
+      const incomingToken = hasTokenField ? data.unlock_token : undefined;
+      // Ignore token-less manager bumps — never clear an existing live unlock code.
+      if (!incomingToken && !data.token_closed_at && !hasTokenField) {
+        setDeliveryUpdateTick((n) => n + 1);
+        return;
+      }
+      setDeliveryLivePatches((prev) => {
+        const prior = prev[data.id] || {};
+        const unlock_token = incomingToken !== undefined
+          ? incomingToken
+          : (prior.unlock_token || null);
+        const token_closed_at = data.token_closed_at ?? prior.token_closed_at ?? null;
+        return {
           ...prev,
           [data.id]: {
-            ...(prev[data.id] || {}),
-            unlock_token: data.unlock_token !== undefined
-              ? data.unlock_token
-              : prev[data.id]?.unlock_token,
-            token_expires_at: data.token_expires_at ?? prev[data.id]?.token_expires_at ?? null,
-            token_sent_at: data.token_sent_at ?? prev[data.id]?.token_sent_at ?? null,
-            token_closed_at: data.token_closed_at ?? prev[data.id]?.token_closed_at ?? null,
-            token_requested_at: data.unlock_token ? null : (prev[data.id]?.token_requested_at ?? null),
-            status: data.status ?? prev[data.id]?.status,
-            open_permission: data.unlock_token && !data.token_closed_at
+            ...prior,
+            unlock_token,
+            token_expires_at: data.token_expires_at ?? prior.token_expires_at ?? null,
+            token_sent_at: data.token_sent_at ?? prior.token_sent_at ?? null,
+            token_closed_at,
+            token_requested_at: unlock_token ? null : (prior.token_requested_at ?? null),
+            status: data.status ?? prior.status,
+            open_permission: unlock_token && !token_closed_at
               ? 'granted'
-              : (data.token_closed_at ? 'used' : prev[data.id]?.open_permission),
-            customer_can_open: Boolean(data.unlock_token) && !data.token_closed_at,
-            rider_can_open: Boolean(data.unlock_token) && !data.token_closed_at && !data.token_used_at,
+              : (token_closed_at ? 'used' : (data.open_permission || prior.open_permission || 'waiting')),
+            customer_can_open: Boolean(unlock_token) && !token_closed_at,
+            rider_can_open: Boolean(unlock_token) && !token_closed_at,
           },
-        }));
-      }
+        };
+      });
       setDeliveryUpdateTick((n) => n + 1);
     };
     s.on('delivery:update', applyDeliveryLivePatch);

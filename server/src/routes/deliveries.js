@@ -53,12 +53,12 @@ function sanitizeDelivery(delivery, profile, userId) {
   // Owner must always receive the unlock code after admin grant — do not rely only on role name.
   const isOwner = delivery.customer_id === userId;
   if (isOwner) {
+    const permission = openPermissionState(delivery);
+    const hasActive = Boolean(delivery.unlock_token) && !delivery.token_closed_at;
     return {
       ...delivery,
-      open_permission: openPermissionState(delivery),
-      customer_can_open: Boolean(delivery.unlock_token)
-        && !delivery.token_closed_at
-        && openPermissionState(delivery) !== 'used',
+      open_permission: permission,
+      customer_can_open: hasActive && permission !== 'used',
     };
   }
 
