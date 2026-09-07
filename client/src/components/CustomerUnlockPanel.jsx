@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle } from 'lucide-react';
+import {
+  Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle, ShieldAlert,
+} from 'lucide-react';
 import { api } from '../lib/api';
 import { formatLockStatusLabel, isBoxOpen } from '../lib/deliveryUtils';
-import { MAP_LABELS } from '../lib/mapConfig';
 import CustomerTokenMessage from './CustomerTokenMessage';
 import RiderRouteMap from './RiderRouteMap';
 
+/**
+ * Customer open/close: wait for admin grant → get code → open → close → confirm.
+ */
 export default function CustomerUnlockPanel({
   delivery,
   token: authToken,
@@ -25,26 +29,31 @@ export default function CustomerUnlockPanel({
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
   const tokenExpired = Boolean(delivery.token_expires_at)
     && new Date(delivery.token_expires_at) < new Date();
-  const tokenConsumed = Boolean(delivery.token_closed_at) || !delivery.unlock_token;
-  const boxOpened = Boolean(delivery.token_used_at) && !tokenConsumed && !tokenExpired;
-  const canEnterToken = isReady && delivery.unlock_token && !delivery.token_used_at && !tokenConsumed && !tokenExpired;
-  const canOpen = canEnterToken;
+  const hasCode = Boolean(delivery.unlock_token) && !delivery.token_closed_at && !tokenExpired;
+  const tokenConsumed = Boolean(delivery.token_closed_at)
+    || (!delivery.unlock_token && Boolean(delivery.token_used_at));
+  const waitingForGrant = isReady
+    && delivery.device_id
+    && !hasCode
+    && !tokenConsumed
+    && !delivery.token_requested_at;
+  const canOpen = isReady && hasCode && !delivery.token_used_at;
   const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
   const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token;
   const canRequestNewToken = isReady
     && delivery.device_id
-    && (tokenConsumed || tokenExpired || !delivery.unlock_token)
+    && (tokenConsumed || tokenExpired || (!delivery.unlock_token && !waitingForGrant))
     && !delivery.token_requested_at;
   const boxIsOpen = delivery.device ? isBoxOpen(delivery.device.lock_status) : false;
   const lockLabel = delivery.device ? formatLockStatusLabel(delivery.device.lock_status) : null;
 
   useEffect(() => {
-    setTokenInput('');
-  }, [delivery.id, delivery.unlock_token]);
+    setTokenInput(hasCode ? String(delivery.unlock_token).toUpperCase() : '');
+  }, [delivery.id, delivery.unlock_token, hasCode]);
 
   const handleOpen = async () => {
-    const code = tokenInput.trim().toUpperCase();
+    const code = (tokenInput || delivery.unlock_token || '').trim().toUpperCase();
     if (!code) {
       onError?.('Enter your unlock code');
       return;
@@ -52,8 +61,8 @@ export default function CustomerUnlockPanel({
     setUnlocking(true);
     onError?.('');
     try {
-      await api.unlockWithToken(authToken, delivery.id, code);
-      onSuccess?.('Smart Box opened — press a button on the box or tap Close below when done');
+      const result = await api.unlockWithToken(authToken, delivery.id, code);
+      onSuccess?.(result?.message || 'Smart Box opened — collect your items, then Close');
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);
@@ -66,8 +75,8 @@ export default function CustomerUnlockPanel({
     setLocking(true);
     onError?.('');
     try {
-      await api.customerLockDelivery(authToken, delivery.id);
-      onSuccess?.('Smart Box closed — your code is used. Request a new code from manager if you need to open again.');
+      const result = await api.customerLockDelivery(authToken, delivery.id);
+      onSuccess?.(result?.message || 'Smart Box closed — unlock code used');
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);
@@ -81,7 +90,7 @@ export default function CustomerUnlockPanel({
     onError?.('');
     try {
       const result = await api.requestDeliveryToken(authToken, delivery.id);
-      onSuccess?.(result?.message || 'Opening request sent — manager will approve so you can open the box again');
+      onSuccess?.(result?.message || 'Opening request sent — wait for admin approval');
       await onUpdated?.();
     } catch (err) {
       onError?.(err.message);
@@ -108,7 +117,7 @@ export default function CustomerUnlockPanel({
 
   return (
     <div className="space-y-4">
-      {delivery.unlock_token && !tokenConsumed && !tokenExpired && (
+      {hasCode && (
         <CustomerTokenMessage
           delivery={delivery}
           customerName={customerName}
@@ -130,16 +139,16 @@ export default function CustomerUnlockPanel({
           </div>
         )}
         <p className="text-[11px] text-slate-500">
-          Box GPS and your location on the same map.
+          Follow the map to point B. Open the box only after you arrive and have your unlock code.
         </p>
       </div>
 
       <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-bold text-white">Smart Box controls</p>
+            <p className="text-sm font-bold text-white">Smart Box — open & close</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Open with your code. Close with either button on the box, or tap Close below.
+              1) Wait for code · 2) Open · 3) Close · 4) Confirm receipt
             </p>
           </div>
           {delivery.device && lockLabel && (
@@ -151,13 +160,26 @@ export default function CustomerUnlockPanel({
           )}
         </div>
 
+        {waitingForGrant && (
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
+            <ShieldAlert className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-200">Waiting for open permission</p>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Your rider is on the way and you can track the box. The unlock code appears here after
+                an admin/manager grants open permission. Then you can open and close the Smart Box.
+              </p>
+            </div>
+          </div>
+        )}
+
         {tokenExpired && !tokenConsumed && (
           <div className="p-3 rounded-lg bg-warning/10 border border-warning/25 flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-warning">Unlock code expired</p>
               <p className="text-xs text-slate-400 mt-1">
-                Tap Request box opening — a manager will approve and send a new code.
+                Request opening again — admin will send a new code.
               </p>
             </div>
           </div>
@@ -167,9 +189,9 @@ export default function CustomerUnlockPanel({
           <div className="p-3 rounded-lg bg-success/10 border border-success/25 flex items-start gap-2">
             <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-success">Unlock code used</p>
+              <p className="text-sm font-semibold text-success">Box closed — code used</p>
               <p className="text-xs text-slate-400 mt-1">
-                Need to open again? Request a new code — manager will confirm first.
+                Confirm receipt below. Need to open again? Request a new code.
               </p>
             </div>
           </div>
@@ -181,26 +203,29 @@ export default function CustomerUnlockPanel({
             <div>
               <p className="text-sm font-semibold text-warning">Opening request pending</p>
               <p className="text-xs text-slate-400 mt-1">
-                You asked to open the Smart Box again. A manager will approve and send a new code to your dashboard.
+                Admin will approve and your new unlock code will appear on this page.
               </p>
             </div>
           </div>
         )}
 
-        {canRequestNewToken && (
+        {(canRequestNewToken || waitingForGrant) && (
           <div className="space-y-2">
             <button
               type="button"
               onClick={handleRequestToken}
-              disabled={requesting}
+              disabled={requesting || waitingForGrant}
               className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+              title={waitingForGrant ? 'Wait for admin grant, or ask admin in Operations' : undefined}
             >
               {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-              Request box opening
+              {waitingForGrant ? 'Waiting for admin grant…' : 'Request box opening'}
             </button>
-            <p className="text-[11px] text-slate-500 text-center">
-              Separate from payment — manager approves opening the Smart Box again.
-            </p>
+            {waitingForGrant && (
+              <p className="text-[11px] text-slate-500 text-center">
+                Admin: Operations → Grant open permission (code is sent to customer + rider).
+              </p>
+            )}
           </div>
         )}
 
@@ -208,7 +233,7 @@ export default function CustomerUnlockPanel({
           <div className="space-y-3">
             <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <Key className="w-3.5 h-3.5" />
-              Step 2 — Enter your code and open
+              Step 2 — Confirm code and open
             </p>
             <input
               type="text"
@@ -240,7 +265,7 @@ export default function CustomerUnlockPanel({
             </p>
             <p className="text-xs text-slate-400 flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              Step 3 — Press either button on the box to lock, or tap Close below.
+              Step 3 — Press a button on the box, or tap Close below.
             </p>
             <button
               type="button"

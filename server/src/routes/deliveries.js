@@ -603,7 +603,7 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
 
     res.json({
       ...sanitizeDelivery(data, req.profile, req.user.id),
-      message: 'Open permission granted. The assigned rider can now see the unlock code and open the Smart Box.',
+      message: 'Open permission granted. Customer and assigned rider can now see the unlock code and open the Smart Box.',
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

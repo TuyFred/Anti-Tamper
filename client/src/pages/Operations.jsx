@@ -398,7 +398,7 @@ export default function Operations() {
                               : 'Open permission pending — rider can track only'}
                         </p>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Rider tracks the box now. Grant permission so they get a code and can open at delivery.
+                          After grant, the unlock code appears for the customer and the rider so they can open and close the box.
                         </p>
                         <button
                           type="button"
