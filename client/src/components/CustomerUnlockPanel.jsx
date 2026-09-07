@@ -118,7 +118,7 @@ export default function CustomerUnlockPanel({
     };
   }, [socket, deliveryProp?.id, onUpdated]);
 
-  // Keep pulling the customer unlock code from the API until it appears.
+  // Pull unlock code from deliveries list (always available) — avoids open-status 404 spam.
   useEffect(() => {
     if (!authToken || !deliveryProp?.id) return undefined;
     if (deliveryProp.token_closed_at) return undefined;
@@ -129,25 +129,36 @@ export default function CustomerUnlockPanel({
     }
 
     let cancelled = false;
+    let gotCode = Boolean(cached?.unlock_token || deliveryProp.unlock_token);
+
     const poll = async () => {
+      if (gotCode || cancelled) return;
+      try {
+        const list = await api.getDeliveries(authToken);
+        if (cancelled) return;
+        const row = (list || []).find((d) => sameId(d.id, deliveryProp.id));
+        if (row?.unlock_token) {
+          gotCode = true;
+          applyStatusPayload(row, { notifyParent: true });
+          return;
+        }
+      } catch {
+        // ignore list errors
+      }
       try {
         const status = await api.getDeliveryOpenStatus(authToken, deliveryProp.id);
         if (cancelled) return;
-        applyStatusPayload(status, { notifyParent: Boolean(status?.unlock_token) });
-      } catch {
-        try {
-          const list = await api.getDeliveries(authToken);
-          if (cancelled) return;
-          const row = (list || []).find((d) => sameId(d.id, deliveryProp.id));
-          if (row) applyStatusPayload(row, { notifyParent: Boolean(row.unlock_token) });
-        } catch {
-          // ignore
+        if (status?.unlock_token) {
+          gotCode = true;
+          applyStatusPayload(status, { notifyParent: true });
         }
+      } catch {
+        // open-code may 404 on old deploys — list poll above is enough
       }
     };
 
     poll();
-    const id = setInterval(poll, 1200);
+    const id = setInterval(poll, 2500);
     const onFocus = () => { poll(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
@@ -157,7 +168,7 @@ export default function CustomerUnlockPanel({
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [authToken, deliveryProp?.id, deliveryProp?.token_closed_at, onUpdated]);
+  }, [authToken, deliveryProp?.id, deliveryProp?.token_closed_at, deliveryProp?.unlock_token, onUpdated]);
 
   // Stop needing cache once parent list has the code from API.
   useEffect(() => {

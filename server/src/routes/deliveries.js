@@ -653,18 +653,39 @@ router.post('/:id/grant-open', authenticate, requireApproved, requireManager, as
 });
 
 /**
- * Customer/rider: poll for unlock code after admin grant.
- * Does not depend on sockets — returns the code as soon as it exists in DB.
+ * Customer: poll for unlock code after admin grant.
+ * Tolerates older DBs without rider_unlock_granted_* columns.
  */
-router.get('/:id/open-status', authenticate, requireApproved, async (req, res) => {
-  // Direct column read — reliable unlock code for customer after admin grant.
-  const { data: row, error } = await supabase
+async function handleOpenStatus(req, res) {
+  const id = req.params.id;
+  const fullSelect = 'id, customer_id, rider_id, status, unlock_token, token_expires_at, token_sent_at, token_closed_at, token_used_at, token_requested_at, rider_unlock_granted_at';
+  const basicSelect = 'id, customer_id, rider_id, status, unlock_token, token_expires_at, token_sent_at, token_closed_at, token_used_at, token_requested_at';
+
+  let { data: row, error } = await supabase
     .from('delivery_requests')
-    .select('id, customer_id, rider_id, status, unlock_token, token_expires_at, token_sent_at, token_closed_at, token_used_at, token_requested_at, rider_unlock_granted_at')
-    .eq('id', req.params.id)
+    .select(fullSelect)
+    .eq('id', id)
     .single();
 
-  if (error || !row) return res.status(404).json({ error: 'Delivery not found' });
+  if (error && /rider_unlock_granted/i.test(error.message || '')) {
+    ({ data: row, error } = await supabase
+      .from('delivery_requests')
+      .select(basicSelect)
+      .eq('id', id)
+      .single());
+  }
+
+  if ((error || !row) && id) {
+    const delivery = await getDeliveryById(id);
+    if (delivery) {
+      row = delivery;
+      error = null;
+    }
+  }
+
+  if (error || !row) {
+    return res.status(404).json({ error: 'Delivery not found', detail: error?.message || null });
+  }
 
   const userId = req.user.id;
   const isOwner = String(row.customer_id || '') === String(userId || '');
@@ -677,7 +698,7 @@ router.get('/:id/open-status', authenticate, requireApproved, async (req, res) =
   const hasActive = Boolean(row.unlock_token) && !row.token_closed_at;
   const maySeeCode = isOwner || isManager(req.profile);
 
-  res.json({
+  return res.json({
     id: row.id,
     status: row.status,
     open_permission: permission,
@@ -692,7 +713,10 @@ router.get('/:id/open-status', authenticate, requireApproved, async (req, res) =
     rider_unlock_granted_at: row.rider_unlock_granted_at || null,
     customer_open_granted: permission === 'granted',
   });
-});
+}
+
+router.get('/:id/open-status', authenticate, requireApproved, handleOpenStatus);
+router.get('/open-code/:id', authenticate, requireApproved, handleOpenStatus);
 
 /** Manager/Admin: send or resend unlock token (customer re-open / also grants rider). */
 router.post('/:id/send-token', authenticate, requireApproved, requireManager, async (req, res) => {
