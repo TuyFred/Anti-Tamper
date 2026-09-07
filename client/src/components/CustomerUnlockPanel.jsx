@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle, ShieldAlert,
+  Key, Lock, Unlock, CheckCircle2, Loader2, MapPin, AlertCircle,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
@@ -9,8 +9,12 @@ import { formatLockStatusLabel, isBoxOpen } from '../lib/deliveryUtils';
 import CustomerTokenMessage from './CustomerTokenMessage';
 import RiderRouteMap from './RiderRouteMap';
 
+function sameId(a, b) {
+  return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+}
+
 /**
- * Customer open/close: admin grant → code appears (socket + poll) → open → close → confirm.
+ * Customer open/close: after admin grant, show code and open/close — no waiting banner.
  */
 export default function CustomerUnlockPanel({
   delivery: deliveryProp,
@@ -32,7 +36,7 @@ export default function CustomerUnlockPanel({
 
   const delivery = useMemo(() => {
     const [merged] = mergeDeliveriesWithLivePatches([deliveryProp], deliveryLivePatches);
-    if (!liveGrant || liveGrant.id !== deliveryProp.id) return merged;
+    if (!liveGrant || !sameId(liveGrant.id, deliveryProp.id)) return merged;
     return {
       ...merged,
       unlock_token: liveGrant.unlock_token || merged.unlock_token,
@@ -50,7 +54,7 @@ export default function CustomerUnlockPanel({
   }, [deliveryProp, deliveryLivePatches, liveGrant]);
 
   const applyStatusPayload = (data, { notifyParent } = {}) => {
-    if (!data || data.id !== deliveryProp.id) return;
+    if (!data || !sameId(data.id, deliveryProp.id)) return;
     if (!data.unlock_token && !data.token_closed_at && data.open_permission !== 'granted') return;
     setLiveGrant({
       id: data.id,
@@ -64,7 +68,6 @@ export default function CustomerUnlockPanel({
     if (notifyParent && data.unlock_token) onUpdated?.();
   };
 
-  // Live socket grant
   useEffect(() => {
     if (!socket || !deliveryProp?.id) return undefined;
     const onGrant = (data) => applyStatusPayload(data, { notifyParent: true });
@@ -76,12 +79,10 @@ export default function CustomerUnlockPanel({
     };
   }, [socket, deliveryProp?.id, onUpdated]);
 
-  // Poll DB while waiting — works even if sockets miss the grant event.
+  // Keep pulling the customer unlock code from the API until it appears.
   useEffect(() => {
     if (!authToken || !deliveryProp?.id) return undefined;
-
-    const alreadyHasCode = Boolean(deliveryProp.unlock_token) && !deliveryProp.token_closed_at;
-    if (alreadyHasCode) return undefined;
+    if (deliveryProp.token_closed_at) return undefined;
 
     let cancelled = false;
     const poll = async () => {
@@ -90,35 +91,29 @@ export default function CustomerUnlockPanel({
         if (cancelled) return;
         applyStatusPayload(status, { notifyParent: Boolean(status?.unlock_token) });
       } catch {
-        // Ignore transient poll errors
+        try {
+          const list = await api.getDeliveries(authToken);
+          if (cancelled) return;
+          const row = (list || []).find((d) => sameId(d.id, deliveryProp.id));
+          if (row) applyStatusPayload(row, { notifyParent: Boolean(row.unlock_token) });
+        } catch {
+          // ignore
+        }
       }
     };
 
     poll();
-    const id = setInterval(poll, 2000);
+    const id = setInterval(poll, 1500);
     const onFocus = () => { poll(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
-
     return () => {
       cancelled = true;
       clearInterval(id);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [
-    authToken,
-    deliveryProp?.id,
-    deliveryProp?.unlock_token,
-    deliveryProp?.token_closed_at,
-    onUpdated,
-  ]);
-
-  useEffect(() => {
-    if (deliveryProp?.unlock_token && !deliveryProp.token_closed_at) {
-      setLiveGrant(null);
-    }
-  }, [deliveryProp?.id, deliveryProp?.unlock_token, deliveryProp?.token_closed_at]);
+  }, [authToken, deliveryProp?.id, deliveryProp?.token_closed_at, onUpdated]);
 
   const isReady = ['rider_assigned', 'in_transit'].includes(delivery.status);
   const tokenExpired = Boolean(delivery.token_expires_at)
@@ -126,30 +121,24 @@ export default function CustomerUnlockPanel({
   const hasCode = Boolean(delivery.unlock_token) && !delivery.token_closed_at && !tokenExpired;
   const tokenConsumed = Boolean(delivery.token_closed_at)
     || (!delivery.unlock_token && Boolean(delivery.token_used_at));
-  const granted = hasCode
-    || delivery.open_permission === 'granted'
-    || delivery.customer_can_open
-    || Boolean(delivery.rider_unlock_granted_at);
-  const waitingForGrant = isReady
-    && delivery.device_id
-    && !hasCode
-    && !granted
+  const canOpen = isReady
     && !tokenConsumed
-    && !delivery.token_requested_at;
-
-  const canOpen = isReady && hasCode && (!delivery.token_used_at || delivery.device?.lock_status === 'locked');
+    && !tokenExpired
+    && (!delivery.token_used_at || delivery.device?.lock_status === 'locked');
   const canClose = isReady && Boolean(delivery.token_used_at) && !delivery.token_closed_at;
   const canComplete = isReady && tokenConsumed && !['delivered', 'cancelled'].includes(delivery.status);
   const tokenRequestPending = Boolean(delivery.token_requested_at) && !delivery.unlock_token && !hasCode;
   const canRequestNewToken = isReady
     && delivery.device_id
-    && (tokenConsumed || tokenExpired || (!delivery.unlock_token && !waitingForGrant && !granted))
+    && (tokenConsumed || tokenExpired)
     && !delivery.token_requested_at;
   const boxIsOpen = delivery.device ? isBoxOpen(delivery.device.lock_status) : false;
   const lockLabel = delivery.device ? formatLockStatusLabel(delivery.device.lock_status) : null;
 
   useEffect(() => {
-    setTokenInput(hasCode ? String(delivery.unlock_token).toUpperCase() : '');
+    if (hasCode) {
+      setTokenInput(String(delivery.unlock_token).toUpperCase());
+    }
   }, [delivery.id, delivery.unlock_token, hasCode]);
 
   const handleOpen = async () => {
@@ -249,7 +238,7 @@ export default function CustomerUnlockPanel({
           <div>
             <p className="text-sm font-bold text-white">Smart Box — open & close</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              1) Get code · 2) Open · 3) Close · 4) Confirm receipt
+              1) Code · 2) Open · 3) Close · 4) Confirm receipt
             </p>
           </div>
           {delivery.device && lockLabel && (
@@ -260,20 +249,6 @@ export default function CustomerUnlockPanel({
             </span>
           )}
         </div>
-
-        {waitingForGrant && (
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
-            <div className="flex items-start gap-2">
-              <ShieldAlert className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-amber-200">Waiting for open permission</p>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  Checking for your unlock code… it will appear here as soon as admin grants permission.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {tokenExpired && !tokenConsumed && (
           <div className="p-3 rounded-lg bg-warning/10 border border-warning/25 flex items-start gap-2">
@@ -305,32 +280,35 @@ export default function CustomerUnlockPanel({
             <div>
               <p className="text-sm font-semibold text-warning">Opening request pending</p>
               <p className="text-xs text-slate-400 mt-1">
-                Admin will approve and your new unlock code will appear on this page.
+                Admin will approve and your new unlock code will appear here.
               </p>
             </div>
           </div>
         )}
 
         {canRequestNewToken && (
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={handleRequestToken}
-              disabled={requesting}
-              className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
-              Request box opening
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleRequestToken}
+            disabled={requesting}
+            className="w-full py-3 rounded-xl bg-warning/15 border border-warning/30 text-warning font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+            Request box opening
+          </button>
         )}
 
         {canOpen && (
           <div className="space-y-3">
             <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <Key className="w-3.5 h-3.5" />
-              Step 2 — Confirm code and open
+              Step 2 — Unlock code & open
             </p>
+            {!hasCode && (
+              <p className="text-[11px] text-slate-500">
+                Enter the customer code from admin (Operations), or wait a moment — it loads here automatically.
+              </p>
+            )}
             <input
               type="text"
               inputMode="text"
