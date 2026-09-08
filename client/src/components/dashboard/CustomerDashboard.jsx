@@ -138,7 +138,7 @@ export default function CustomerDashboard() {
 
       <DashboardQuickActions
         items={[
-          { to: '/deliveries', label: 'New delivery', hint: 'Book a Smart Box', icon: 'Package', highlight: true },
+          { to: '/deliveries', label: 'My deliveries', hint: 'Book · pay · unlock', icon: 'Package', highlight: true },
           { to: '/tracking', label: 'Live tracking', hint: 'Map & GPS', icon: 'Radio' },
           { to: '/deliveries/history', label: 'History', hint: 'Past orders', icon: 'History', badge: historyCount },
           { to: '/alerts', label: 'Alerts', hint: 'Notifications', icon: 'Bell', badge: unreadAlerts },
@@ -196,7 +196,7 @@ export default function CustomerDashboard() {
           </DashboardPanel>
 
           {tokenDelivery && (
-            <DashboardPanel title="Unlock code" subtitle="Use at the Smart Box" icon="Key" accent="warning">
+            <DashboardPanel title="Unlock code" subtitle="Sent by admin after Grant open permission" icon="Key" accent="warning">
               <p className="font-mono text-3xl tracking-[0.35em] text-white font-black text-center mb-4">
                 {String(tokenDelivery.unlock_token || tokenDelivery.unlock_code).toUpperCase()}
               </p>

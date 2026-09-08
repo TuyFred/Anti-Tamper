@@ -6,16 +6,16 @@ import {
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { getAppNavItems } from '../lib/navigation';
+import { getAppNavItems, getRoleGuide, groupNavBySection } from '../lib/navigation';
 import { prefetchRoute } from '../lib/routePrefetch';
 import { NavIcon } from './dashboard/DashboardPanel';
 import MobileNavDrawer, { MobileNavSection } from './MobileNavDrawer';
 
-function NavLinkItem({ item, active, mobile, badgeCount, onNavigate }) {
+function NavLinkItem({ item, active, mobile, badgeCount, onNavigate, collapsed }) {
   return (
     <Link
       to={item.to}
-      title={item.label}
+      title={item.desc ? `${item.label} — ${item.desc}` : item.label}
       onClick={onNavigate}
       onMouseEnter={() => prefetchRoute(item.to)}
       onFocus={() => prefetchRoute(item.to)}
@@ -28,9 +28,16 @@ function NavLinkItem({ item, active, mobile, badgeCount, onNavigate }) {
       }`}
     >
       <NavIcon name={item.icon} className={mobile ? 'w-6 h-6 shrink-0' : 'w-5 h-5 shrink-0'} />
-      <div className="flex-1 min-w-0">
-        <span className="block truncate">{item.label}</span>
-      </div>
+      {!collapsed && (
+        <div className="flex-1 min-w-0">
+          <span className="block truncate leading-snug">{item.label}</span>
+          {item.desc && (
+            <span className={`block font-normal truncate ${mobile ? 'text-xs text-slate-500 mt-0.5' : 'text-[10px] text-slate-500 mt-0.5'}`}>
+              {item.desc}
+            </span>
+          )}
+        </div>
+      )}
       {item.badgeKey === 'alerts' && badgeCount > 0 && (
         <span className="ml-auto px-2 py-0.5 bg-danger text-white text-xs font-bold rounded-full min-w-[22px] text-center shrink-0">
           {badgeCount > 99 ? '99+' : badgeCount}
@@ -43,13 +50,26 @@ function NavLinkItem({ item, active, mobile, badgeCount, onNavigate }) {
   );
 }
 
+function isActivePath(pathname, target) {
+  if (pathname === target) return true;
+  if (target === '/dashboard') return pathname === '/dashboard';
+  if (target === '/deliveries') return pathname === '/deliveries';
+  if (target === '/orders') return pathname === '/orders';
+  if (target === '/operations') return pathname === '/operations';
+  if (target === '/admin') return pathname === '/admin';
+  if (target !== '/' && pathname.startsWith(`${target}/`)) return true;
+  return false;
+}
+
 export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobileClose }) {
-  const { profile, signOut, isManager, isCustomer, isRider } = useAuth();
+  const { profile, signOut, isManager, isCustomer, isRider, roleName } = useAuth();
   const { connected, alerts, connectionStatus } = useSocket();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
   const navItems = getAppNavItems({ isManager, isCustomer, isRider });
+  const navGroups = groupNavBySection(navItems);
+  const roleGuide = getRoleGuide({ isManager, isCustomer, isRider, roleName });
   const isMobileDrawer = onMobileClose != null;
 
   const criticalCount = alerts.filter((a) => !a.is_acknowledged && a.severity === 'critical').length;
@@ -66,39 +86,10 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
     customer: 'Customer',
     manager: 'Manager',
     motor_rider: 'Motor Rider',
-    admin: 'Manager',
+    admin: 'Admin',
     operator: 'Operator',
     viewer: 'Viewer',
   }[profile?.role?.name] || profile?.role?.name;
-
-  const mainItems = navItems.filter((i) => i.section === 'main');
-  const controlItems = navItems.filter((i) => i.section === 'control');
-  const accountItems = navItems.filter((i) => i.section === 'account');
-  const isActivePath = (target) => {
-    if (location.pathname === target) return true;
-    if (target === '/dashboard') return location.pathname.startsWith('/dashboard');
-    return false;
-  };
-
-  const renderSection = (title, items, mobile) => (
-    <>
-      <p className={`px-3 pb-2 font-semibold uppercase tracking-wider text-slate-500 ${mobile ? 'pt-2 text-xs' : 'pt-1 text-[10px]'}`}>
-        {title}
-      </p>
-      <div className="space-y-1">
-        {items.map((item) => (
-          <NavLinkItem
-            key={item.to}
-            item={item}
-            active={isActivePath(item.to)}
-            mobile={mobile}
-            badgeCount={badgeCount}
-            onNavigate={mobile ? onMobileClose : undefined}
-          />
-        ))}
-      </div>
-    </>
-  );
 
   const desktopFooter = (
     <div className="border-t border-border space-y-2 p-3">
@@ -148,6 +139,10 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
 
   const mobileDrawerFooter = (
     <>
+      <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 mb-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-primary-light">{roleGuide.title}</p>
+        <p className="text-xs text-slate-400 leading-snug mt-1">{roleGuide.steps}</p>
+      </div>
       <div className="flex items-center gap-3 px-2 py-2 mb-3">
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 border border-primary/20 flex items-center justify-center font-bold text-primary-light shrink-0 text-sm">
           {initials}
@@ -189,7 +184,7 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
           {!collapsed && (
             <Link to="/dashboard" className="flex-1 min-w-0">
               <h1 className="font-bold text-white text-sm leading-tight truncate">Smart Box</h1>
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider">Delivery System</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider">{roleLabel}</p>
             </Link>
           )}
           <button
@@ -202,22 +197,45 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
           </button>
         </div>
 
+        {!collapsed && (
+          <div className="mx-3 mt-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-primary-light">{roleGuide.title}</p>
+            <p className="text-[11px] text-slate-400 leading-snug mt-1">{roleGuide.steps}</p>
+          </div>
+        )}
+
         <nav className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1">
           {collapsed ? (
             navItems.map((item) => (
               <NavLinkItem
                 key={item.to}
                 item={item}
-                active={isActivePath(item.to)}
+                active={isActivePath(location.pathname, item.to)}
                 mobile={false}
                 badgeCount={badgeCount}
+                collapsed
               />
             ))
           ) : (
-            <div className="space-y-1">
-              {mainItems.length > 0 && renderSection('Overview', mainItems, false)}
-              {controlItems.length > 0 && renderSection('Control', controlItems, false)}
-              {accountItems.length > 0 && renderSection('Account', accountItems, false)}
+            <div className="space-y-4">
+              {navGroups.map((group) => (
+                <div key={group.title}>
+                  <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    {group.title}
+                  </p>
+                  <div className="space-y-1">
+                    {group.items.map((item) => (
+                      <NavLinkItem
+                        key={item.to}
+                        item={item}
+                        active={isActivePath(location.pathname, item.to)}
+                        mobile={false}
+                        badgeCount={badgeCount}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </nav>
@@ -231,54 +249,24 @@ export default function Sidebar({ unreadAlerts = 0, mobileOpen = false, onMobile
           onClose={onMobileClose}
           side="left"
           title="Smart Box"
-          subtitle={undefined}
+          subtitle={roleLabel}
           footer={mobileDrawerFooter}
         >
           <div className="p-4 space-y-5">
-            {mainItems.length > 0 && (
-              <MobileNavSection title="Overview">
-                {mainItems.map((item) => (
+            {navGroups.map((group) => (
+              <MobileNavSection key={group.title} title={group.title}>
+                {group.items.map((item) => (
                   <NavLinkItem
                     key={item.to}
                     item={item}
-                    active={isActivePath(item.to)}
+                    active={isActivePath(location.pathname, item.to)}
                     mobile
                     badgeCount={badgeCount}
                     onNavigate={onMobileClose}
                   />
                 ))}
               </MobileNavSection>
-            )}
-
-            {controlItems.length > 0 && (
-              <MobileNavSection title="Control">
-                {controlItems.map((item) => (
-                  <NavLinkItem
-                    key={item.to}
-                    item={item}
-                    active={isActivePath(item.to)}
-                    mobile
-                    badgeCount={badgeCount}
-                    onNavigate={onMobileClose}
-                  />
-                ))}
-              </MobileNavSection>
-            )}
-
-            {accountItems.length > 0 && (
-              <MobileNavSection title="Account">
-                {accountItems.map((item) => (
-                  <NavLinkItem
-                    key={item.to}
-                    item={item}
-                    active={isActivePath(item.to)}
-                    mobile
-                    badgeCount={badgeCount}
-                    onNavigate={onMobileClose}
-                  />
-                ))}
-              </MobileNavSection>
-            )}
+            ))}
           </div>
         </MobileNavDrawer>
       )}

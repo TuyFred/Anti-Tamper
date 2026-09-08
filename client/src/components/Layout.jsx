@@ -5,21 +5,21 @@ import Sidebar from './Sidebar';
 import AlertToast from './AlertToast';
 
 const pageTitles = {
-  '/dashboard': { title: 'Dashboard', wide: false },
-  '/deliveries': { title: 'Deliveries', wide: false },
-  '/deliveries/history': { title: 'Delivery history', wide: false },
-  '/orders': { title: 'Active orders', wide: false },
-  '/orders/history': { title: 'Order history', wide: false },
-  '/operations': { title: 'Operations', wide: false },
-  '/operations/tokens': { title: 'Opening requests', wide: false },
-  '/operations/opening-requests': { title: 'Opening requests', wide: false },
-  '/profile': { title: 'My profile', wide: false },
-  '/reports': { title: 'Reports & History', wide: false },
-  '/rider': { title: 'My Route', wide: true },
-  '/alerts': { title: 'Alerts', wide: false },
-  '/tracking': { title: 'Live Tracking', wide: true },
-  '/admin': { title: 'Users', wide: false },
-  '/admin/videos': { title: 'Promo Videos', wide: false },
+  '/dashboard': { title: 'Overview', subtitle: 'Your next steps', wide: false },
+  '/deliveries': { title: 'My deliveries', subtitle: 'Book, pay, unlock', wide: false },
+  '/deliveries/history': { title: 'Delivery history', subtitle: 'Completed & cancelled', wide: false },
+  '/orders': { title: 'Active orders', subtitle: 'Live deliveries', wide: false },
+  '/orders/history': { title: 'Order history', subtitle: 'Completed & cancelled', wide: false },
+  '/operations': { title: 'Operations', subtitle: 'Verify · assign · grant', wide: false },
+  '/operations/tokens': { title: 'Opening requests', subtitle: 'Customer re-open queue', wide: false },
+  '/operations/opening-requests': { title: 'Opening requests', subtitle: 'Customer re-open queue', wide: false },
+  '/profile': { title: 'My profile', subtitle: 'Account settings', wide: false },
+  '/reports': { title: 'Reports & History', subtitle: 'Exports & activity', wide: false },
+  '/rider': { title: 'My Route', subtitle: 'Assigned deliveries', wide: true },
+  '/alerts': { title: 'Alerts', subtitle: 'Security notices', wide: false },
+  '/tracking': { title: 'Live Tracking', subtitle: 'Map & GPS', wide: true },
+  '/admin': { title: 'Users', subtitle: 'Approve & roles', wide: false },
+  '/admin/videos': { title: 'Promo Videos', subtitle: 'Homepage clips', wide: false },
 };
 
 export default function Layout({ children }) {
@@ -57,12 +57,18 @@ export default function Layout({ children }) {
 
           <div className="flex-1 min-w-0">
             <h2 className="text-base sm:text-lg font-bold text-white truncate leading-tight">{page.title}</h2>
+            {page.subtitle && (
+              <p className="text-[11px] text-slate-500 truncate">{page.subtitle}</p>
+            )}
           </div>
         </header>
 
         {/* Desktop page header */}
         <header className="hidden lg:block px-6 py-4 border-b border-border bg-surface-light/50">
           <h2 className="text-xl font-bold text-white">{page.title}</h2>
+          {page.subtitle && (
+            <p className="text-sm text-slate-500 mt-0.5">{page.subtitle}</p>
+          )}
         </header>
 
         <main className={`flex-1 p-4 sm:p-5 lg:p-6 overflow-y-auto overflow-x-hidden w-full mx-auto ${

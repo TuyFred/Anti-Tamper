@@ -43,6 +43,15 @@ export default function ManagerDashboard() {
   const activeOps = deliveries.filter((d) =>
     ['payment_verified', 'rider_assigned', 'in_transit'].includes(d.status),
   );
+  const needsAssign = deliveries.filter((d) => d.status === 'payment_verified').length;
+  const needsGrant = deliveries.filter((d) =>
+    ['rider_assigned', 'in_transit'].includes(d.status)
+    && d.device_id
+    && d.rider_id
+    && !(d.unlock_token || d.token_delivery?.unlock_token)
+    && !d.token_closed_at
+    && d.open_permission !== 'granted',
+  ).length;
   const criticalAlerts = alerts.filter((a) => !a.is_acknowledged && a.severity === 'critical').length;
   const unreadAlerts = alerts.filter((a) => !a.is_acknowledged).length;
 
@@ -58,6 +67,22 @@ export default function ManagerDashboard() {
       icon: CreditCard,
       tone: 'warning',
       hint: 'Proofs waiting',
+    },
+    needsAssign > 0 && {
+      label: 'Assign rider',
+      count: needsAssign,
+      to: '/operations',
+      icon: Truck,
+      tone: 'primary',
+      hint: 'Payment verified — assign box',
+    },
+    needsGrant > 0 && {
+      label: 'Grant open',
+      count: needsGrant,
+      to: '/operations',
+      icon: CheckCircle2,
+      tone: 'warning',
+      hint: 'Send unlock code to customer',
     },
     pendingUsers > 0 && {
       label: 'Approve users',
@@ -91,10 +116,10 @@ export default function ManagerDashboard() {
 
       <DashboardQuickActions
         items={[
+          { to: '/operations', label: 'Operations', hint: 'Verify · assign · grant', icon: 'ClipboardList', badge: paymentReview + needsAssign + needsGrant, highlight: true },
           { to: '/orders', label: 'Orders', hint: 'Active queue', icon: 'Package', badge: activeOrders.length },
-          { to: '/operations', label: 'Operations', hint: 'Assign & verify', icon: 'ClipboardList', badge: paymentReview },
-          { to: '/tracking', label: 'Tracking', hint: 'Live map', icon: 'Radio' },
-          { to: '/admin', label: 'Users', hint: 'Team access', icon: 'Users', badge: pendingUsers },
+          { to: '/tracking', label: 'Fleet map', hint: 'Live GPS', icon: 'Radio' },
+          { to: '/admin', label: 'Users', hint: 'Approve accounts', icon: 'Users', badge: pendingUsers },
           { to: '/reports', label: 'Reports', hint: 'History & export', icon: 'FileText' },
           { to: '/alerts', label: 'Alerts', hint: 'Security', icon: 'Bell', badge: unreadAlerts },
         ]}

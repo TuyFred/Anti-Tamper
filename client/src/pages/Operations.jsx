@@ -159,10 +159,15 @@ export default function Operations() {
       )}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-          <ClipboardList className="w-5 h-5 text-primary-light" />
-          Operations
-        </h3>
+        <div>
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-primary-light" />
+            Operations
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Flow: Verify payment → Assign rider + Smart Box → Grant open (code goes to customer)
+          </p>
+        </div>
         {pendingPaymentCount > 0 && (
           <span className="text-sm text-warning font-medium">{pendingPaymentCount} pending</span>
         )}
@@ -174,6 +179,12 @@ export default function Operations() {
             {tokenRequestCount} box opening request{tokenRequestCount !== 1 ? 's' : ''} →
           </Link>
         )}
+      </div>
+
+      <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-xs text-slate-300 leading-relaxed">
+        <span className="text-primary-light font-semibold">Assign rider:</span> customer can track, rider delivers — no unlock yet.
+        {' '}
+        <span className="text-success font-semibold">Grant open permission:</span> unlock code is sent to the customer (app popup + email). Rider never sees the code.
       </div>
 
       <div className="flex flex-wrap gap-2">

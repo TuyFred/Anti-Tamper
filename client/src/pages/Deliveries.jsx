@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { Plus, History, Key } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { countDeliverySegments } from '../lib/deliveryUtils';
+import { countDeliverySegments, isActiveDelivery } from '../lib/deliveryUtils';
+import { getCustomerNextStep } from '../lib/navigation';
 import { useCustomerDeliveries } from '../hooks/useCustomerDeliveries';
 import DeliveryBookingModal from '../components/DeliveryRequestFormSection';
 import CustomerDeliveryCards from '../components/CustomerDeliveryCards';
@@ -48,10 +49,21 @@ export default function Deliveries() {
       && !d.token_closed_at),
     [deliveries],
   );
+  const focusDelivery = useMemo(
+    () => (deliveries || []).find((d) => isActiveDelivery(d.status)) || null,
+    [deliveries],
+  );
+  const nextStep = getCustomerNextStep(focusDelivery);
 
   if (loading && deliveries.length === 0) {
     return <ContentSkeleton rows={4} />;
   }
+
+  const toneClass = {
+    success: 'border-success/35 bg-success/10 text-success',
+    warning: 'border-warning/35 bg-warning/10 text-warning',
+    info: 'border-primary/30 bg-primary/10 text-primary-light',
+  }[nextStep?.tone] || 'border-border bg-surface text-slate-300';
 
   return (
     <div className="space-y-5">
@@ -62,11 +74,18 @@ export default function Deliveries() {
         <div className="p-3 bg-success/10 border border-success/25 rounded-xl text-sm text-success">{success}</div>
       )}
 
+      {nextStep && (
+        <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
+          <p className="text-sm font-semibold">{nextStep.title}</p>
+          <p className="text-xs mt-1 opacity-90 text-slate-300">{nextStep.detail}</p>
+        </div>
+      )}
+
       {activeCodes.length > 0 && (
         <div className="rounded-2xl border-2 border-success/40 bg-success/10 p-4 space-y-3">
           <p className="text-xs font-bold uppercase tracking-wider text-success flex items-center gap-1.5">
             <Key className="w-4 h-4" />
-            Your unlock code{activeCodes.length > 1 ? 's' : ''} (from admin)
+            Unlock code from admin grant
           </p>
           {activeCodes.map((d) => (
             <div key={d.id} className="text-center">
@@ -74,12 +93,13 @@ export default function Deliveries() {
                 {String(d.unlock_token || d.unlock_code).toUpperCase()}
               </p>
               <p className="text-[11px] text-slate-400 mt-1 truncate">
-                {d.delivery_address || 'Active delivery'}
+                Sent when admin granted open permission
+                {d.delivery_address ? ` · ${d.delivery_address}` : ''}
               </p>
             </div>
           ))}
           <p className="text-[11px] text-slate-400 text-center">
-            Expand the delivery below to open or close the Smart Box with this code.
+            Expand the delivery below → enter this code → Open Smart Box at location B.
           </p>
         </div>
       )}
@@ -87,7 +107,9 @@ export default function Deliveries() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-white">My deliveries</h2>
-          <p className="text-sm text-slate-500 mt-0.5">{activeCount} active — 10 per page</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {activeCount} active — book, track, and open your Smart Box here
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
           {segments.history > 0 && (

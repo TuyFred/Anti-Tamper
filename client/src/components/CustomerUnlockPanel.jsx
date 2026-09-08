@@ -304,13 +304,15 @@ export default function CustomerUnlockPanel({
         <div className="rounded-2xl border-2 border-success/40 bg-success/10 p-4 sm:p-5 space-y-3">
           <p className="text-xs font-bold uppercase tracking-wider text-success flex items-center gap-1.5">
             <Key className="w-4 h-4" />
-            Your unlock code (from admin grant)
+            Unlock code from admin
           </p>
           <p className="text-center font-mono text-3xl sm:text-4xl tracking-[0.35em] text-white font-black">
             {String(delivery.unlock_token).toUpperCase()}
           </p>
-          <p className="text-[11px] text-slate-400 text-center">
-            Use this code below to open the Smart Box. Do not share it with the rider.
+          <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+            Sent to you when admin tapped <span className="text-slate-200 font-medium">Grant open permission</span>
+            {delivery.token_sent_at ? ` · ${new Date(delivery.token_sent_at).toLocaleString()}` : ''}.
+            Use it below to open the Smart Box. Do not share with the rider.
           </p>
         </div>
       )}
@@ -414,7 +416,7 @@ export default function CustomerUnlockPanel({
             </p>
             {!showCode && (
               <p className="text-[11px] text-slate-500">
-                Waiting for admin grant… the code will appear above automatically, or enter it if admin shared it.
+                Waiting for admin to grant open permission. The code appears here automatically (and by email) when they grant.
               </p>
             )}
             <input

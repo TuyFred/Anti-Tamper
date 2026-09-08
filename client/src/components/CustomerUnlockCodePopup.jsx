@@ -82,13 +82,13 @@ export default function CustomerUnlockCodePopup({ deliveries = [] }) {
       <div className="space-y-4 text-center">
         <p className="text-sm text-success font-semibold inline-flex items-center gap-1.5 justify-center">
           <Key className="w-4 h-4" />
-          Admin granted open permission
+          Sent by admin — Grant open permission
         </p>
         <p className="font-mono text-4xl tracking-[0.35em] text-white font-black">
           {code}
         </p>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Use this code on My deliveries to open BOX. Do not share it with the rider.
+          Go to My deliveries → expand the order → Open Smart Box with this code. Do not share it with the rider.
         </p>
         {active.delivery_address && (
           <p className="text-[11px] text-slate-500 truncate">{active.delivery_address}</p>
