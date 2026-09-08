@@ -173,14 +173,13 @@ async function unlockDevice(deviceRow, userId) {
   return { mqttSent: true };
 }
 
-async function issueUnlockToken(delivery, actorId, summary, options = {}) {
+async function issueUnlockToken(delivery, actorId, summary) {
   const token = generateUnlockToken();
   const expires = new Date();
   expires.setHours(expires.getHours() + deliveryConfig.tokenExpiryHours);
   const now = new Date().toISOString();
 
-  // Customer opens the box. Never write rider_unlock_granted_* — many production DBs
-  // lack those columns and PostgREST rejects the whole UPDATE (code never saved).
+  // Minimal fields only — never include optional columns that may be missing in production.
   const payload = {
     unlock_token: token,
     token_expires_at: expires.toISOString(),
@@ -191,55 +190,42 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
     updated_at: now,
   };
 
-  const runUpdate = (selectExpr) => supabase
+  // Step 1: write WITHOUT a join select (join failures can block the whole grant).
+  const { error: updateError } = await supabase
     .from('delivery_requests')
     .update(payload)
-    .eq('id', delivery.id)
-    .select(selectExpr)
-    .single();
-
-  let { data, error } = await runUpdate(getDeliverySelect());
-
-  // Fall back if join/select shape fails after a successful schema mismatch or phone column issue.
-  if (error) {
-    console.warn('issueUnlockToken select failed, retrying simpler select:', error.message);
-    ({ data, error } = await runUpdate(
-      '*, customer:profiles!delivery_requests_customer_id_fkey(id, email, full_name)',
-    ));
-  }
-  if (error) {
-    ({ data, error } = await runUpdate('*'));
-    if (!error && data) {
-      data = {
-        ...data,
-        customer: delivery.customer || null,
-        customer_id: data.customer_id || delivery.customer_id,
-      };
-    }
+    .eq('id', delivery.id);
+  if (updateError) {
+    throw new Error(updateError.message || 'Failed to save unlock code');
   }
 
-  if (error) throw new Error(error.message);
-
-  // Guarantee the issued code is on the returned row (select joins can omit fields).
-  if (!data.unlock_token) {
-    data = { ...data, ...payload, unlock_token: token };
-  }
-
-  // Hard verify the code was persisted (never claim grant success without DB write).
+  // Step 2: read back and confirm the code exists.
   const { data: verified, error: verifyError } = await supabase
     .from('delivery_requests')
-    .select('id, customer_id, unlock_token, token_sent_at, token_expires_at, token_closed_at, status')
+    .select('id, customer_id, rider_id, status, unlock_token, token_sent_at, token_expires_at, token_closed_at, delivery_address')
     .eq('id', delivery.id)
     .single();
   if (verifyError || !verified?.unlock_token) {
-    throw new Error(verifyError?.message || 'Unlock code failed to save — tap Grant open permission again');
+    throw new Error(verifyError?.message || 'Unlock code failed to save — tap Grant again');
   }
-  data = {
-    ...data,
+
+  let customer = delivery.customer || null;
+  if (!customer?.email && verified.customer_id) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, email, full_name')
+      .eq('id', verified.customer_id)
+      .single();
+    if (profile) customer = profile;
+  }
+
+  const data = {
+    ...delivery,
     ...verified,
     unlock_token: verified.unlock_token,
-    customer: data.customer || delivery.customer || null,
-    customer_id: verified.customer_id || data.customer_id || delivery.customer_id,
+    unlock_code: verified.unlock_token,
+    customer,
+    customer_id: verified.customer_id || delivery.customer_id,
   };
 
   await logActivity({
@@ -251,23 +237,21 @@ async function issueUnlockToken(delivery, actorId, summary, options = {}) {
   });
 
   console.log(
-    `Unlock code issued for delivery ${data.id} → customer ${data.customer_id || delivery.customer_id}`,
+    `Unlock code issued for delivery ${data.id} → customer ${data.customer_id} (${customer?.email || 'no-email'})`,
   );
 
-  // Push unlock code to the customer dashboard immediately (socket).
   notifyDeliveryUpdate({
     ...data,
-    customer_id: data.customer_id || delivery.customer_id,
-    unlock_token: data.unlock_token || token,
-    unlock_code: data.unlock_token || token,
+    customer_id: data.customer_id,
+    unlock_token: data.unlock_token,
+    unlock_code: data.unlock_token,
   });
 
-  // Also email the customer so they always receive the code after admin grant.
-  const customerEmail = data.customer?.email || delivery.customer?.email;
+  const customerEmail = customer?.email;
   if (customerEmail && data.unlock_token) {
     sendCustomerUnlockCodeEmail(customerEmail, {
       code: data.unlock_token,
-      customerName: data.customer?.full_name || delivery.customer?.full_name || null,
+      customerName: customer?.full_name || null,
       deliveryAddress: data.delivery_address || delivery.delivery_address || null,
       expiresAt: data.token_expires_at
         ? formatDateTimeFull(data.token_expires_at, { withSeconds: false })

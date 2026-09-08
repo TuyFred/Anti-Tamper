@@ -11,6 +11,7 @@ import PaymentProofModal from '../components/PaymentProofModal';
 import DeliveryContactBlock from '../components/DeliveryContactBlock';
 import Pagination from '../components/ui/Pagination';
 import ContentSkeleton from '../components/ui/ContentSkeleton';
+import Modal from '../components/ui/Modal';
 import { useDeliveriesCache } from '../hooks/useDeliveriesCache';
 import { usePagination } from '../hooks/usePagination';
 import {
@@ -47,6 +48,7 @@ export default function Operations() {
   const [assignForms, setAssignForms] = useState({});
   const [actionId, setActionId] = useState(null);
   const [proofView, setProofView] = useState(null);
+  const [codePopup, setCodePopup] = useState(null);
 
   const loadMeta = async () => {
     try {
@@ -121,15 +123,27 @@ export default function Operations() {
       return;
     }
     return runAction(async () => {
-      const result = await api.assignRider(token, id, form);
-      if (result?.message) setSuccess(result.message);
-      return result;
+      await api.assignRider(token, id, form);
+      // One simple step: assign then auto-send unlock code to the customer.
+      const grant = await api.grantDeliveryOpen(token, id);
+      const code = grant?.unlock_token || grant?.token_delivery?.unlock_token;
+      const email = grant?.customer_email || grant?.customer?.email;
+      if (code) {
+        setCodePopup({ code, email, deliveryId: id });
+        setSuccess(`Rider assigned + code ${code} sent to customer${email ? ` (${email})` : ''}`);
+      } else {
+        setSuccess('Rider assigned. Tap “Send unlock code to customer” if code did not appear.');
+      }
+      return grant;
     }, id);
   };
 
   const handleSendToken = (id) => runAction(async () => {
     const result = await api.sendDeliveryToken(token, id);
-    setSuccess(result?.message || 'Unlock code issued.');
+    const code = result?.unlock_token || result?.token_delivery?.unlock_token;
+    const email = result?.customer_email || result?.customer?.email;
+    if (code) setCodePopup({ code, email, deliveryId: id });
+    setSuccess(code ? `Code ${code} sent to customer${email ? ` (${email})` : ''}` : (result?.message || 'Unlock code issued.'));
     return result;
   }, id);
 
@@ -137,11 +151,12 @@ export default function Operations() {
     const result = await api.grantDeliveryOpen(token, id);
     const code = result?.unlock_token || result?.token_delivery?.unlock_token;
     const email = result?.customer_email || result?.customer?.email;
-    setSuccess(
-      code
-        ? `Code ${code} sent to customer${email ? ` (${email})` : ''} — tell them to open My deliveries`
-        : (result?.message || 'Open permission granted — customer can now open the box.'),
-    );
+    if (code) {
+      setCodePopup({ code, email, deliveryId: id });
+      setSuccess(`Code ${code} sent to customer${email ? ` (${email})` : ''} — they see it on My deliveries`);
+    } else {
+      setSuccess(result?.message || 'Open permission granted — customer can now open the box.');
+    }
     return result;
   }, id);
 
@@ -165,7 +180,7 @@ export default function Operations() {
             Operations
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Flow: Verify payment → Assign rider + Smart Box → Grant open (code goes to customer)
+            Flow: Verify payment → Assign rider (auto-sends unlock code to customer)
           </p>
         </div>
         {pendingPaymentCount > 0 && (
@@ -182,10 +197,40 @@ export default function Operations() {
       </div>
 
       <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-xs text-slate-300 leading-relaxed">
-        <span className="text-primary-light font-semibold">Assign rider:</span> customer can track, rider delivers — no unlock yet.
+        <span className="text-primary-light font-semibold">Assign rider:</span> also sends the unlock code to the customer automatically.
         {' '}
-        <span className="text-success font-semibold">Grant open permission:</span> unlock code is sent to the customer (app popup + email). Rider never sees the code.
+        Customer sees a popup + code on <span className="text-white font-medium">My deliveries</span>. Rider never sees the code.
       </div>
+
+      {codePopup?.code && (
+        <Modal
+          open
+          onClose={() => setCodePopup(null)}
+          title="Unlock code sent to customer"
+          size="sm"
+          footer={(
+            <button
+              type="button"
+              onClick={() => setCodePopup(null)}
+              className="w-full py-3 rounded-xl bg-primary text-white font-semibold"
+            >
+              Done
+            </button>
+          )}
+        >
+          <div className="space-y-3 text-center">
+            <p className="text-xs text-slate-400">
+              Customer{codePopup.email ? ` (${codePopup.email})` : ''} will see this code now
+            </p>
+            <p className="font-mono text-4xl tracking-[0.35em] text-white font-black">
+              {String(codePopup.code).toUpperCase()}
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Tell the customer to open My deliveries (or wait for the popup).
+            </p>
+          </div>
+        </Modal>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -368,12 +413,12 @@ export default function Operations() {
                         className="sm:col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50"
                       >
                         <UserCheck className="w-4 h-4" />
-                        Assign rider to route
+                        Assign rider + send code to customer
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-500 flex items-start gap-1.5 pt-1 border-t border-border/60">
-                      <Key className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-300" />
-                      After assign, the rider tracks the box only. Use “Grant open permission” to send the unlock code to the <span className="text-white font-medium">customer</span> so they can open.
+                      <Key className="w-3.5 h-3.5 shrink-0 mt-0.5 text-success" />
+                      Assigning also sends the unlock code to the <span className="text-white font-medium">customer</span> automatically.
                     </p>
                   </div>
                 )}
@@ -429,9 +474,9 @@ export default function Operations() {
                           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-success/15 border border-success/30 text-success text-xs font-semibold disabled:opacity-50"
                         >
                           <Unlock className="w-3.5 h-3.5" />
-                          {(d.rider_open_granted || d.open_permission === 'granted')
-                            ? 'Re-issue open code to customer'
-                            : 'Grant open permission'}
+                          {(d.rider_open_granted || d.open_permission === 'granted' || d.token_delivery?.unlock_token)
+                            ? 'Re-send unlock code to customer'
+                            : 'Send unlock code to customer'}
                         </button>
                         {!d.token_request_pending && (
                           <button
